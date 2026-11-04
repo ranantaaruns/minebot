@@ -66,9 +66,12 @@ function findSafeSpot (bot, options = {}) {
     for (let dz = -radius; dz <= radius; dz++) {
       const horizontal = Math.hypot(dx, dz)
       if (horizontal === 0 || horizontal > radius) continue
-      if (from && minDistance > 0 && Math.hypot(dx, dz) < minDistance) continue
       for (let dy = -maxDrop; dy <= maxRise; dy++) {
         const candidate = origin.offset(dx, dy, dz)
+        if (from && minDistance > 0) {
+          const away = Math.hypot(candidate.x - from.x, candidate.z - from.z)
+          if (away < minDistance) continue
+        }
         if (!isStandable(bot, candidate)) continue
         const score = horizontal + Math.abs(dy) * 0.75
         if (score < bestScore) {

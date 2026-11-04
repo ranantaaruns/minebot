@@ -5,6 +5,7 @@ const { goals } = require('mineflayer-pathfinder')
 const { sleep, withTimeout } = require('../util/async')
 const { bestWeapon } = require('./combat')
 const { applyMovements } = require('../movements')
+const { findSafeSpot, isStandable } = require('./lava')
 
 const ARROW_NAMES = new Set(['arrow', 'spectral_arrow', 'tipped_arrow'])
 const BOW_SCORES = { bow: 10, crossbow: 8 }
@@ -98,6 +99,12 @@ class PlayerHunter {
       timeoutMs: 180000,
       approachRefreshMs: 800,
       maxNoPath: 3,
+      retreatEnabled: true,
+      retreatHealth: 10,
+      retreatResumeHealth: 16,
+      retreatDistance: 12,
+      retreatRadius: 14,
+      retreatHealTimeoutMs: 45000,
       ...(combat.hunt || {})
     }
 
@@ -105,6 +112,7 @@ class PlayerHunter {
     this.nextShotAt = 0
     this.nextApproachAt = 0
     this.noPathCount = 0
+    this.retreating = false
   }
 
   async hunt (name, cancellation) {
@@ -170,6 +178,12 @@ class PlayerHunter {
         return this._result(target, stats, 'killed', true)
       }
 
+      // Darah sekarat: mundur dulu, makan sampai pulih, baru lanjut menyerang.
+      if (this._shouldRetreat()) {
+        await this._retreat(entity, stats, cancellation)
+        continue
+      }
+
       const distance = this.bot.entity.position.distanceTo(entity.position)
 
       if (distance <= Number(this.settings.meleeRange)) {
@@ -184,6 +198,127 @@ class PlayerHunter {
 
       await sleep(Number(this.settings.tickMs) || 250, cancellation)
     }
+  }
+
+  _health () {
+    const raw = this.bot?.health
+    if (raw === undefined || raw === null) return NaN
+    return Number(raw)
+  }
+
+  _shouldRetreat () {
+    if (this.settings.retreatEnabled === false) return false
+    const health = this._health()
+    if (!Number.isFinite(health)) return false
+    if (this.retreating) return health < Number(this.settings.retreatResumeHealth)
+    return health <= Number(this.settings.retreatHealth)
+  }
+
+  async _retreat (entity, stats, cancellation) {
+    const health = this._health()
+    if (!this.retreating) {
+      this.retreating = true
+      stats.retreats = (stats.retreats || 0) + 1
+      this.logger?.warn(`Darah rendah (${health}); mundur mencari tempat aman untuk heal`)
+    }
+
+    this._stopPath()
+    try {
+      const spot = this._findRetreatSpot(entity)
+      if (spot) {
+        await this._moveTo(spot)
+      } else {
+        this._keepDistance(entity)
+      }
+
+      await this._heal(cancellation)
+
+      if (this._health() >= Number(this.settings.retreatResumeHealth)) {
+        this.retreating = false
+        this.logger?.info(`Darah pulih (${this._health()}); lanjut menyerang`)
+        this._stopPath()
+      }
+    } catch (err) {
+      if (err?.cancelled) throw err
+      this.logger?.debug(`Retreat gagal: ${err.message}`)
+    }
+  }
+
+  _findRetreatSpot (entity) {
+    try {
+      return findSafeSpot(this.bot, {
+        radius: Number(this.settings.retreatRadius) || 14,
+        from: entity?.position || null,
+        minDistance: Number(this.settings.retreatDistance) || 0
+      })
+    } catch (err) {
+      this.logger?.debug(`Gagal mencari tempat aman: ${err.message}`)
+      return null
+    }
+  }
+
+  async _moveTo (spot) {
+    if (!spot) return false
+    if (isStandable(this.bot, spot) && this.bot.entity.position.distanceTo(spot) < 1.5) return true
+    const timeoutMs = Math.max(1000, Number(this.settings.retreatMoveTimeoutMs) || 12000)
+    try {
+      if (typeof this.bot.pathfinder?.goto === 'function') {
+        await withTimeout(
+          this.bot.pathfinder.goto(new goals.GoalBlock(spot.x, spot.y, spot.z)),
+          timeoutMs,
+          'Mundur ke tempat aman timeout'
+        )
+        return true
+      }
+      this.bot.pathfinder?.setGoal?.(new goals.GoalBlock(spot.x, spot.y, spot.z), true)
+      return true
+    } catch (err) {
+      this.logger?.debug(`Gagal mundur ke tempat aman: ${err.message}`)
+      return false
+    }
+  }
+
+  // Kalau tidak ada blok aman, minimal jaga jarak supaya tidak dipukul terus.
+  _keepDistance (entity) {
+    if (!entity) return
+    const distance = Number(this.settings.retreatDistance) || 12
+    try {
+      this.bot.pathfinder?.setGoal?.(new goals.GoalInvert(new goals.GoalFollow(entity, distance)), true)
+    } catch (err) {
+      this.logger?.debug(`Gagal menjaga jarak: ${err.message}`)
+    }
+  }
+
+  async _heal (cancellation) {
+    const resumeAt = Number(this.settings.retreatResumeHealth)
+    const deadline = Date.now() + (Number(this.settings.retreatHealTimeoutMs) || 45000)
+    const food = this.bot.foodManager
+
+    while (Date.now() < deadline) {
+      cancellation?.throwIfCancelled?.()
+      const health = this._health()
+      if (!Number.isFinite(health) || health >= resumeAt) return true
+
+      if (Number(this.bot.food) < 20) {
+        const choice = typeof food?.pickFood === 'function' ? food.pickFood() : null
+        if (!choice) {
+          this.logger?.warn('Tidak ada makanan untuk heal; tetap menjauh dari target')
+          return false
+        }
+        try {
+          await withTimeout(this.bot.equip(choice.item, 'hand'), 2000, 'Equip makanan timeout')
+          await withTimeout(this.bot.consume(), 5000, 'Makan timeout')
+          this.logger?.info(`Makan ${choice.item.name} saat retreat (health=${this._health()})`)
+        } catch (err) {
+          if (err?.cancelled) throw err
+          this.logger?.debug(`Gagal makan saat retreat: ${err.message}`)
+        }
+      }
+
+      await sleep(500, cancellation)
+    }
+
+    return this._health() >= resumeAt
   }
 
   _bowReady () {
@@ -283,6 +418,7 @@ class PlayerHunter {
       reason,
       hits: stats.hits,
       shots: stats.shots,
+      retreats: stats.retreats || 0,
       durationMs: Date.now() - stats.startedAt
     }
   }

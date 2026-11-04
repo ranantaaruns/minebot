@@ -91,7 +91,14 @@ const DEFAULTS = {
       bowRange: 24,
       drawMs: 1000,
       tickMs: 250,
-      timeoutMs: 180000
+      timeoutMs: 180000,
+      retreatEnabled: true,
+      retreatHealth: 10,
+      retreatResumeHealth: 16,
+      retreatDistance: 12,
+      retreatRadius: 14,
+      retreatHealTimeoutMs: 45000,
+      retreatMoveTimeoutMs: 12000
     }
   },
   storage: {
