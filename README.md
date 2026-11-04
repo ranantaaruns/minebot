@@ -268,6 +268,28 @@ Saat target follow berada di permukaan, bot memberi biaya besar pada langkah yan
 - `maxDescent` mencegah bot turun terlalu jauh saat mengejar target permukaan.
 - `coverScanHeight` adalah jumlah blok ke atas yang dicek untuk mendeteksi atap.
 
+## Keamanan lava
+
+Bot memantau lava/fire setiap `safety.lava.checkIntervalMs` (default 250 ms). Begitu bot masuk lava, pathfinder dihentikan dan bot dipindahkan ke blok aman terdekat — bukan hanya memberi warning di console.
+
+```json
+"safety": {
+  "lava": {
+    "enabled": true,
+    "checkIntervalMs": 250,
+    "dangerRadius": 8,
+    "escapeTimeoutMs": 2500,
+    "cooldownMs": 1500
+  }
+}
+```
+
+Selain penjagaan aktif itu, pathfinder juga diberi aturan tambahan:
+
+- Blok yang berbatasan lava (termasuk diagonal) diberi penalti besar untuk dipijak, baik di Nether maupun di overworld.
+- `movements.exclusionAreasBreak` menolak menggali blok yang menempel lava, karena lava bisa langsung mengalir ke lorong. Ini yang membuat bot tidak lagi mati saat menggali `ancient_debris`.
+- Saat menambang ancient debris, bot memeriksa kotak 2 blok di sekitar debris dan di depan lorong tambang. Kalau lava terdeteksi, arah lorong diputar 90 derajat; setelah 4 kali putaran (`maxLavaTurns`) bot berhenti dengan alasan `lava-blocked`.
+
 ## Makan saat perjalanan
 
 Bot makan otomatis saat food turun. Sebelum makan, bot menghentikan pathfinder sebentar, menunggu proses menggali atau memasang block selesai, lalu melanjutkan perjalanan. Saat berada di air, bot tetap menahan `jump` selama makan.
@@ -358,6 +380,17 @@ Nilai `combat.hunt` yang bisa diubah:
 | `drawMs` | `1000` | Lama menarik panah sebelum dilepas |
 | `tickMs` | `250` | Jeda antar keputusan menyerang |
 | `timeoutMs` | `180000` | Batas waktu satu job attack |
+| `retreatEnabled` | `true` | Mundur + makan saat darah rendah saat PvP |
+| `retreatHealth` | `10` | Darah (dari 20) yang memicu retreat |
+| `retreatResumeHealth` | `16` | Darah yang harus tercapai sebelum menyerang lagi |
+| `retreatDistance` | `12` | Jarak minimum dari target saat memilih tempat aman |
+| `retreatRadius` | `14` | Radius pencarian blok aman untuk retreat |
+| `retreatMoveTimeoutMs` | `12000` | Batas waktu berjalan ke tempat aman |
+| `retreatHealTimeoutMs` | `45000` | Batas waktu menunggu darah pulih |
+
+### Retreat dan heal saat PvP
+
+Kalau darah bot turun sampai `retreatHealth` (default 10), bot berhenti menyerang, menjauh ke blok aman yang jaraknya minimal `retreatDistance` dari target, lalu makan sampai food penuh. Setelah darah mencapai `retreatResumeHealth` (default 16) bot otomatis menyerang lagi dengan senjata terbaik. Selama retreat bot tidak memukul, jadi tidak terjebak trade damage saat sekarat. Kalau tidak ada makanan di inventory, bot tetap menjaga jarak dan memberi warning.
 
 Saat mode multi-bot, `attack <nama player>` tanpa `--bot` mengirim semua bot yang online dan idle; `attack <nama player> --bot 2` hanya bot itu. CombatManager otomatis dimatikan selama job attack agar tidak menukar senjata di tengah tarikan panah, lalu dinyalakan lagi setelah job selesai.
 
@@ -376,6 +409,24 @@ Saat slot kosong tinggal `minFreeSlots` atau kurang, bot mencari chest/barrel/sh
 ```
 
 Kalau tidak ada storage, bot memberi warning dan menghentikan job. Penghalang di atas container ikut dibersihkan bila `clearObstructions` aktif; atur tinggi pembersihan lewat `gather.clearHeight`.
+
+## Prioritas cave saat mining
+
+Di overworld bot mencari cave/lorong terdekat lebih dulu sebelum menggali lubang baru — cocok untuk base bawah tanah yang sudah punya jalan ke cave. Kalau blok ore terdekat sudah lebih dekat dari `caveMinOreDistance`, bot langsung menambang tanpa berjalan ke cave.
+
+```json
+"gather": {
+  "preferCaves": true,
+  "caveRadius": 48,
+  "caveTravelTimeoutMs": 60000,
+  "caveMinOreDistance": 16
+}
+```
+
+- `preferCaves` menyalakan pencarian cave. Tidak berlaku di Nether.
+- `caveRadius` adalah radius pencarian cave dari posisi bot.
+- `caveMinOreDistance` menentukan kapan bot dianggap "sudah dekat ore" sehingga tidak perlu pindah ke cave.
+- Kandidat cave diurutkan dari yang terdekat; kalau tidak terjangkau bot mencoba kandidat berikutnya (maksimal 3), lalu kembali menambang seperti biasa.
 
 ## Membersihkan penghalang chest
 
@@ -440,4 +491,4 @@ Konfigurasi `gamemode`:
 npm test
 ```
 
-Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran), container, dan storage. Tes tidak memerlukan server Minecraft.
+Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, retreat + heal), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, container, dan storage. Tes tidak memerlukan server Minecraft.
