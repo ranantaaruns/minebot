@@ -54,6 +54,9 @@ class MaterialManager {
       caveRadius: overrides.caveRadius ?? this.gatherDir.caveRadius,
       caveTravelTimeoutMs: overrides.caveTravelTimeoutMs ?? this.gatherDir.caveTravelTimeoutMs,
       caveMinOreDistance: overrides.caveMinOreDistance ?? this.gatherDir.caveMinOreDistance,
+      digTimeoutMs: overrides.digTimeoutMs ?? this.gatherDir.digTimeoutMs,
+      walkTimeoutMs: overrides.walkTimeoutMs ?? this.gatherDir.walkTimeoutMs,
+      maxStalled: overrides.maxStalled ?? this.gatherDir.maxStalled,
       minHealth: this.config.safety.minHealth,
       movementOptions: {
         allowTower: this.config.owner?.allowTower !== false,

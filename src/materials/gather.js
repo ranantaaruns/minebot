@@ -2,10 +2,10 @@
 
 const { MINE_SOURCES } = require('./sources')
 const { countItemName } = require('../util/inventory')
-const { withTimeout } = require('../util/async')
 const { applyMovements } = require('../movements')
 const { goToCave } = require('../navigation/cave')
 const { isNether } = require('../safety/nether')
+const { mineBlock, inReach } = require('./dig')
 
 function hasSilkTouch (bot) {
   try {
@@ -57,6 +57,11 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
     allowHandMining = false,
     avoidUnderBot = false,
     movementOptions = {},
+    digTimeoutMs = 15000,
+    walkTimeoutMs = 8000,
+    maxStalled = 5,
+    maxFailures = 12,
+    rescanLimit = 2,
     preferCaves = false,
     caveRadius = 48,
     caveTravelTimeoutMs = 60000,
@@ -141,28 +146,35 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
 
   logger?.info(`Menambang ${itemName}: butuh ${wanted}, kandidat ${positions.length} blok`)
 
-  // mineflayer-collectblock memakai ulang movements-nya sendiri (tanpa blok scaffold
-  // yang kita kenal), jadi bot menyerah saat butuh menumpuk 1 blok. Pakai movements
-  // gather kita agar towering 1x1 tetap mungkin selama menambang.
-  if (bot.collectBlock && bot.pathfinder) {
-    try {
-      const movements = applyMovements(bot, 'gather', movementOptions)
-      bot.collectBlock.movements = movements
-    } catch (err) {
-      logger?.debug(`Gagal menyiapkan movements tambang: ${err.message}`)
-    }
+  // Movements gather dipakai untuk berjalan ke blok yang jauh (boleh menumpuk 1x1),
+  // tetapi blok yang sudah dalam jangkauan langsung dihancurkan tanpa pathfinding.
+  try {
+    const movements = applyMovements(bot, 'gather', movementOptions)
+    if (bot.collectBlock) bot.collectBlock.movements = movements
+  } catch (err) {
+    logger?.debug(`Gagal menyiapkan movements tambang: ${err.message}`)
   }
 
+  const attempted = new Set()
   let have = before
   let minedBlocks = 0
   let failures = 0
   let stalled = 0
+  let rescans = 0
   let stopReason = null
 
-  for (const pos of positions) {
+  // Blok di sekitar bot selalu didahulukan supaya bot menghancurkan ore yang sudah
+  // terlihat dulu, bukan berjalan mondar-mandir ke kandidat terjauh.
+  const orderCandidates = list => list.slice().sort((a, b) => {
+    const reachA = inReach(bot, bot.blockAt(a)) ? 0 : 1
+    const reachB = inReach(bot, bot.blockAt(b)) ? 0 : 1
+    if (reachA !== reachB) return reachA - reachB
+    return bot.entity.position.distanceTo(a) - bot.entity.position.distanceTo(b)
+  })
+
+  while (positions.length > 0 && have < count) {
     cancellation?.throwIfCancelled()
 
-    if (have >= count) break
     if (bot.health !== undefined && bot.health < minHealth) {
       logger?.warn('Health rendah, berhenti menambang')
       stopReason = 'low-health'
@@ -192,48 +204,58 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
       }
     }
 
+    positions = orderCandidates(positions)
+    const pos = positions.shift()
+    attempted.add(pos)
     const block = bot.blockAt(pos)
     if (!block || !ids.includes(block.type)) continue
 
-    try {
-      await withTimeout(
-        bot.collectBlock.collect(block, { ignoreNoPath: true }),
-        timeoutPerBlockMs,
-        `Menambang ${itemName} timeout`
-      )
+    const wasInReach = inReach(bot, block)
+    const dug = await mineBlock(bot, block, {
+      logger,
+      digTimeoutMs: timeoutPerBlockMs === 45000 ? digTimeoutMs : timeoutPerBlockMs,
+      walkTimeoutMs
+    })
+
+    if (dug.ok) {
       minedBlocks++
       materials.minedCount++
       stalled = 0
-    } catch (err) {
+      have = countItemName(bot, mcData, itemName)
+      if (minedBlocks % 8 === 0) {
+        logger?.info(`Progress tambang ${itemName}: ${have}/${count}`)
+      }
+    } else {
       failures++
-      const message = err.message || ''
-      logger?.debug(`Gagal menambang di ${pos}: ${message}`)
-      // Jangan tinggalkan goal pathfinder yang basi: bot bisa diam lama sekali.
+      if (wasInReach) stalled++
+      logger?.debug(`Gagal menambang di ${pos}: ${dug.reason}`)
       try { bot.pathfinder?.stop?.() } catch {}
       try { bot.clearControlStates?.() } catch {}
 
-      if (err.name === 'NoPath' || /no path|timeout/i.test(message)) {
-        stalled++
-        if (stalled >= 2) {
-          logger?.warn('Blok tambang tidak terjangkau (perlu menumpuk/naik); berhenti mencari blok lain')
-          stopReason = 'unreachable'
-          break
-        }
+      if (stalled >= maxStalled) {
+        logger?.warn('Blok tambang di sekitar tidak bisa dihancurkan; berhenti mencari blok lain')
+        stopReason = 'unreachable'
+        break
       }
-
-      if (failures >= 8) {
+      if (failures >= maxFailures) {
         logger?.warn('Terlalu banyak kegagalan menambang, berhenti')
+        stopReason = 'too-many-failures'
         break
       }
     }
 
-    have = countItemName(bot, mcData, itemName)
-    if (minedBlocks % 8 === 0) {
-      logger?.info(`Progress tambang ${itemName}: ${have}/${count}`)
+    // Kandidat habis tapi masih butuh: cari blok baru di sekitar posisi bot sekarang.
+    if (positions.length === 0 && have < count && minedBlocks > 0 && rescans < rescanLimit) {
+      rescans++
+      positions = findPositions().filter(candidate => !attempted.has(candidate))
+      if (positions.length > 0) {
+        logger?.debug(`Cari ulang ore di sekitar: ${positions.length} kandidat baru`)
+      }
     }
   }
 
   have = countItemName(bot, mcData, itemName)
+  if (!stopReason && minedBlocks === 0 && failures > 0) stopReason = 'unreachable'
   const result = { mined: have - before, have, blocks: minedBlocks }
   if (stopReason) result.reason = stopReason
   return result

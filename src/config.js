@@ -99,6 +99,12 @@ const DEFAULTS = {
       retreatRadius: 14,
       retreatHealTimeoutMs: 45000,
       retreatMoveTimeoutMs: 12000
+    },
+    shield: {
+      enabled: true,
+      blockRange: 4.5,
+      predictMs: 350,
+      approachWindow: 2.5
     }
   },
   storage: {
@@ -148,6 +154,9 @@ const DEFAULTS = {
     preferChests: true,
     clearChestObstructions: true,
     clearHeight: 3,
+    digTimeoutMs: 15000,
+    walkTimeoutMs: 8000,
+    maxStalled: 5,
     preferCaves: true,
     caveRadius: 48,
     caveTravelTimeoutMs: 60000,

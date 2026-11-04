@@ -17,7 +17,7 @@ const coalBlock = mcData.blocksByName.coal_ore.id
 
 function fakeBot (positions, { failWith = null } = {}) {
   const blocks = positions.map(position => ({ position, type: coalBlock, name: 'coal_ore' }))
-  return {
+  const bot = {
     version: '1.21.4',
     registry: mcData,
     entity: { position: new Vec3(0, 64, 0) },
@@ -26,8 +26,20 @@ function fakeBot (positions, { failWith = null } = {}) {
       items: () => [],
       emptySlotCount: () => 10
     },
-    findBlocks: () => positions.slice(),
+    findBlocks: ({ maxDistance = 48, count = 128 } = {}) => positions
+      .filter(pos => pos.distanceTo(bot.entity.position) <= maxDistance)
+      .slice(0, count)
+      .map(pos => pos),
     blockAt: pos => blocks.find(block => block.position.equals(pos)) || null,
+    tool: {
+      equipped: [],
+      async equipForBlock (block) { this.equipped.push(block.name) }
+    },
+    digs: [],
+    async dig (block) {
+      if (failWith) throw failWith
+      bot.digs.push(block)
+    },
     collectBlock: {
       movements: null,
       calls: 0,
@@ -39,11 +51,17 @@ function fakeBot (positions, { failWith = null } = {}) {
     pathfinder: {
       stops: 0,
       movements: null,
+      gotoCalls: 0,
+      async goto () {
+        this.gotoCalls++
+        if (failWith) throw failWith
+      },
       stop () { this.stops++ },
       setMovements (movements) { this.movements = movements }
     },
     clearControlStates () {}
   }
+  return bot
 }
 
 function fakeMaterials () {
@@ -60,16 +78,11 @@ function noPathError () {
   return err
 }
 
-test('mining hands follow-grade movements to collectBlock so towering is possible', async () => {
+test('ore di samping bot langsung dihancurkan tanpa pathfinding, movements gather tetap dipasang', async () => {
   const positions = [new Vec3(1, 64, 0)]
   const bot = fakeBot(positions)
-  let usedMovements = null
-  bot.collectBlock.collect = async function () {
-    usedMovements = this.movements
-    this.calls++
-  }
 
-  await mineItem(bot, mcData, fakeMaterials(), 'coal', 4, {
+  const result = await mineItem(bot, mcData, fakeMaterials(), 'coal', 4, {
     logger: silentLogger,
     allowHandMining: true,
     movementOptions: {
@@ -78,11 +91,17 @@ test('mining hands follow-grade movements to collectBlock so towering is possibl
     }
   })
 
-  assert.ok(usedMovements, 'collectBlock harus memakai movements hasil applyMovements')
-  assert.equal(usedMovements.allow1by1towers, true)
-  const scaffoldNames = usedMovements.scafoldingBlocks.map(id => mcData.items[id].name)
+  assert.equal(result.blocks, 1)
+  assert.equal(bot.digs.length, 1, 'blok dalam jangkauan digali langsung')
+  assert.equal(bot.pathfinder.gotoCalls, 0, 'tidak perlu berjalan ke blok yang sudah terjangkau')
+  assert.equal(bot.collectBlock.calls, 0, 'collectBlock tidak dipakai lagi untuk blok dekat')
+  assert.deepEqual(bot.tool.equipped, ['coal_ore'], 'tool dipilih sebelum menggali')
+
+  const movements = bot.pathfinder.movements
+  assert.ok(movements, 'movements gather harus dipasang untuk berjalan ke blok jauh')
+  assert.equal(movements.allow1by1towers, true)
+  const scaffoldNames = movements.scafoldingBlocks.map(id => mcData.items[id].name)
   assert.ok(scaffoldNames.includes('dirt'))
-  assert.equal(bot.pathfinder.movements, usedMovements)
 })
 
 test('mining stops quickly and resets the pathfinder when blocks are unreachable', async () => {
@@ -96,13 +115,15 @@ test('mining stops quickly and resets the pathfinder when blocks are unreachable
 
   const result = await mineItem(bot, mcData, fakeMaterials(), 'coal', 4, {
     logger: silentLogger,
-    allowHandMining: true
+    allowHandMining: true,
+    digTimeoutMs: 200
   })
 
   assert.equal(result.reason, 'unreachable')
   assert.equal(result.mined, 0)
-  assert.equal(bot.collectBlock.calls, 2, 'berhenti setelah dua kegagalan jalur, bukan delapan')
-  assert.ok(bot.pathfinder.stops >= 2, 'pathfinder dihentikan agar tidak macet')
+  assert.equal(bot.digs.length, 0)
+  assert.equal(bot.pathfinder.gotoCalls, 4, 'satu percobaan jalan per blok, bukan berulang-ulang')
+  assert.ok(bot.pathfinder.stops >= 1, 'pathfinder dihentikan agar tidak macet')
 })
 
 function caveMiningBot ({ orePositions = [], dimension = 'minecraft:overworld' } = {}) {
@@ -129,6 +150,13 @@ function caveMiningBot ({ orePositions = [], dimension = 'minecraft:overworld' }
       if (ore) return ore
       if (air.some(p => p.equals(pos))) return { name: 'cave_air', boundingBox: 'empty' }
       return { name: 'stone', boundingBox: 'block' }
+    },
+    tool: {
+      async equipForBlock () {}
+    },
+    digs: [],
+    async dig (block) {
+      bot.digs.push(block)
     },
     collectBlock: {
       movements: null,
@@ -161,9 +189,9 @@ test('mining di overworld berjalan ke cave terdekat lebih dulu', async () => {
     caveMinOreDistance: 6
   })
 
-  assert.equal(bot.pathfinder.gotoCalls, 1, 'bot harus menuju cave lebih dulu')
-  assert.ok(bot.collectBlock.calls >= 1)
-  assert.ok(bot.entity.position.x >= 8, 'bot sudah berada di area cave saat menambang')
+  assert.ok(bot.pathfinder.gotoCalls >= 1, 'bot harus menuju cave lebih dulu')
+  assert.ok(bot.digs.length >= 1, 'ore di cave digali langsung setelah sampai')
+  assert.ok(bot.digs[0].position.x >= 8, 'ore pertama yang digali ada di area cave')
 })
 
 test('mining tidak mencari cave bila ore sudah dekat', async () => {
