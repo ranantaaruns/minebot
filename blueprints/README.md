@@ -13,12 +13,12 @@ Format yang didukung:
 - `.litematic` dari Litematica
 - `.schem` dari WorldEdit (Sponge schematic)
 - `.schematic` dari WorldEdit lama (MCEdit)
-- `.nbt` selama isinya schematic yang dikenali
+- `.nbt` dari structure block Minecraft (“Save Structure”)
 
 Catatan:
 
 - Ukuran dibatasi `build.maxVolume` (default 200.000 blok volume). Naikkan di `config.json` kalau perlu.
-- Orientasi mengikuti file apa adanya. Rotasi/mirror belum didukung.
+- Orientasi mengikuti file apa adanya. Pakai `--rotate <90|180|270>` (searah jarum jam) atau `--mirror <x|z>` di perintah `build` untuk arah lain.
 - Entity, isi chest, teks sign, dan data tile lain tidak ikut dibangun.
 - Blok yang tidak bisa didapat sebagai item (air, water, lava, bedrock, spawner, crop, dsb.) dilewati otomatis.
 - Pintu, tempat tidur, tall plant, dan blok dua bagian lain ditangani sebagian; bagian atas dibuat otomatis saat bagian bawah dipasang.

@@ -1,6 +1,6 @@
 # mcbot
 
-Bot Minecraft untuk login otomatis, mengikuti owner, mengumpulkan material, dan membangun struktur dari file `.litematic` / `.schem`.
+Bot Minecraft untuk login otomatis, mengikuti owner, mengumpulkan material, dan membangun struktur dari file `.litematic` / `.schem` / `.nbt`.
 
 Dibuat untuk server Java offline-mode (AuthMe dan sejenisnya). Bot berjalan di terminal dan dikendalikan lewat perintah teks.
 
@@ -65,7 +65,7 @@ mcbot>
 | `status` | Status koneksi, auth, job, posisi |
 | `pos` | Koordinat bot |
 | `inv [filter]` | Isi inventory |
-| `materials <file> [--dry]` | Hitung kebutuhan material |
+| `materials <file> [opsi]` | Hitung kebutuhan material |
 | `build <file> [opsi]` | Bangun struktur |
 | `gamemode [mode]` | Lihat atau ubah gamemode bot (survival/creative/dll) |
 | `gather <item> <count>` | Kumpulkan material |
@@ -86,6 +86,11 @@ Opsi `build`:
 - `--dry-run` — hanya tampilkan rencana material
 - `--no-gather` — jangan menambang/crafting, pakai inventory dan chest saja
 - `--force` — tetap build walau material kurang
+- `--rotate <90|180|270>` — putar blueprint searah jarum jam (north → east)
+- `--mirror <x|z>` — cerminkan blueprint pada sumbu x atau z
+- `--bot <id|nama>` — pilih bot tertentu saat menjalankan lebih dari satu bot
+
+Opsi `--rotate`, `--mirror`, dan `--bot` juga berlaku untuk `materials`.
 
 Kalau server di-reset total dan akun bot belum terdaftar lagi, jalankan:
 
@@ -102,6 +107,8 @@ mcbot> materials rumah.litematic
 mcbot> build rumah.litematic --at 100 64 -20
 mcbot> build rumah.litematic --no-gather
 mcbot> build menara.schem --dry-run
+mcbot> build rumah.litematic --rotate 90 --mirror z
+mcbot> build rumah.litematic --bot 2
 ```
 
 ## Rencana material tanpa menjalankan bot
@@ -129,6 +136,16 @@ Yang tidak otomatis ditambang: material langka/berbahaya seperti diamond, nether
 ## File blueprint
 
 Lihat [blueprints/README.md](blueprints/README.md). Letakkan file di folder `blueprints/`, lalu panggil namanya saja.
+
+Format yang didukung:
+
+| Ekstensi | Sumber | Catatan |
+| --- | --- | --- |
+| `.litematic` | Litematica | Beberapa region digabung otomatis |
+| `.schem` / `.schematic` | WorldEdit / Sponge / MCEdit | |
+| `.nbt` | Structure block Minecraft (“Save Structure”) | |
+
+Semua format menerima `--rotate` dan `--mirror`, jadi satu file bisa dipakai untuk beberapa arah tanpa duplikat.
 
 ## Bot macet di pinggir block (Paper 1.21.11)
 
@@ -363,8 +380,9 @@ Konfigurasi `gamemode`:
 
 ## Batasan
 
-- Orientasi mengikuti file; rotasi/mirror belum ada. Arah blok menghadap (tangga, torch dinding, sign) diusahakan tetapi tidak dijamin sama persis.
-- Scaffold yang dipasang tidak dibongkar otomatis kecuali `build.removeScaffolds` diubah ke `true`.
+- Orientasi mengikuti file. Gunakan `--rotate` / `--mirror` bila perlu arah lain; arah blok menghadap (tangga, torch dinding, sign) ikut diputar tetapi tidak dijamin sama persis untuk blok ber-properti khusus.
+- Scaffold yang dipasang tidak dibongkar otomatis kecuali `build.removeScaffolds` diubah ke `true` (default `false`).
+- Multi-bot: satu perintah `build` dijalankan oleh satu bot (`--bot <id|nama>`, default bot primary). Build paralel oleh beberapa bot belum didukung.
 - Farmland dan dirt path tidak dibuat otomatis; sediakan lewat chest bila diperlukan.
 - Entity, isi chest, teks sign, dan data tile tidak ikut dibangun.
 - Build bisa gagal di area protected, claim, atau saat anti-cheat server ketat.
@@ -384,4 +402,4 @@ Konfigurasi `gamemode`:
 npm test
 ```
 
-Tes mencakup parser `.litematic`/`.schem`, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi permukaan, dialog owner, material biome, combat, container, dan storage. Tes tidak memerlukan server Minecraft.
+Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, container, dan storage. Tes tidak memerlukan server Minecraft.
