@@ -104,11 +104,11 @@ const DEFAULTS = {
   build: {
     maxVolume: 200000,
     reach: 4.2,
-    placeDelayMs: 20,
+    placeDelayMs: 120,
     retryLimit: 3,
     maxPasses: 4,
     anchor: 'bot',
-    removeScaffolds: true,
+    removeScaffolds: false,
     scaffold: {
       enabled: true,
       blocks: ['dirt', 'cobblestone', 'oak_planks', 'scaffolding']

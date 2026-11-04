@@ -156,3 +156,13 @@ test('loadConfig validates food and swim settings', () => {
 
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('config.example.json konsisten dengan DEFAULTS untuk build', () => {
+  const { DEFAULTS } = require('../src/config')
+  const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.example.json'), 'utf8'))
+
+  assert.equal(example.build.placeDelayMs, DEFAULTS.build.placeDelayMs)
+  assert.equal(example.build.removeScaffolds, DEFAULTS.build.removeScaffolds)
+  assert.equal(DEFAULTS.build.placeDelayMs, 120)
+  assert.equal(DEFAULTS.build.removeScaffolds, false)
+})
