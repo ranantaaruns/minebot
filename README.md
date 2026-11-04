@@ -380,13 +380,14 @@ Nilai `combat.hunt` yang bisa diubah:
 | `drawMs` | `1000` | Lama menarik panah sebelum dilepas |
 | `tickMs` | `250` | Jeda antar keputusan menyerang |
 | `timeoutMs` | `180000` | Batas waktu satu job attack |
-| `retreatEnabled` | `true` | Mundur + makan saat darah rendah saat PvP |
-| `retreatHealth` | `10` | Darah (dari 20) yang memicu retreat |
+| `retreatEnabled` | `true` | Lari + makan saat darah rendah saat PvP |
+| `retreatHealth` | `10` | Darah (dari 20) yang memicu lari |
 | `retreatResumeHealth` | `16` | Darah yang harus tercapai sebelum menyerang lagi |
-| `retreatDistance` | `12` | Jarak minimum dari target saat memilih tempat aman |
-| `retreatRadius` | `14` | Radius pencarian blok aman untuk retreat |
-| `retreatMoveTimeoutMs` | `12000` | Batas waktu berjalan ke tempat aman |
-| `retreatHealTimeoutMs` | `45000` | Batas waktu menunggu darah pulih |
+| `retreatDistance` | `12` | Jarak yang dianggap cukup jauh dari target |
+| `retreatTickMs` | `200` | Interval pembaruan arah lari |
+| `retreatFleeTimeoutMs` | `15000` | Batas waktu lari sebelum kembali menyerang |
+| `retreatZigzagDeg` | `35` | Besar belokan kiri/kanan saat lari |
+| `retreatZigzagMs` | `400` | Interval ganti arah belokan |
 
 Nilai `combat.shield` untuk memakai shield saat PvP:
 
@@ -399,11 +400,13 @@ Nilai `combat.shield` untuk memakai shield saat PvP:
 
 ### Retreat dan heal saat PvP
 
-Kalau darah bot turun sampai `retreatHealth` (default 10), bot berhenti menyerang, menjauh ke blok aman yang jaraknya minimal `retreatDistance` dari target, lalu makan sampai food penuh. Setelah darah mencapai `retreatResumeHealth` (default 16) bot otomatis menyerang lagi dengan senjata terbaik. Selama retreat bot tidak memukul, jadi tidak terjebak trade damage saat sekarat. Kalau tidak ada makanan di inventory, bot tetap menjaga jarak dan memberi warning.
+Kalau darah bot turun sampai `retreatHealth` (default 10), bot berhenti menyerang lalu **lari menjauh dari target sambil makan**. Tidak ada lagi pencarian "tempat aman" lewat pathfinder — bot cukup memakai kontrol gerak (`forward` + `sprint`), jadi tidak mungkin gagal dengan `Path was stopped before it could be completed`. Arah lari selalu menjauh dari target, tetapi berganti-ganti kiri/kanan setiap `retreatZigzagMs` sebesar `retreatZigzagDeg`, sehingga bot tidak berlari lurus dan serangan lawan lebih sering meleset. Sebelum berbelok, bot memeriksa blok di depan: lava, api, kaktus, atau dinding akan membuatnya memilih arah belok lain (0°, ±45°, ±90°, ±135°, 180°). Saat tidak bisa maju (menabrak), bot melompat.
+
+Makan berjalan **bersamaan** dengan lari: begitu food di bawah 20, bot memilih makanan terbaik dari inventory dan memakannya tanpa menghentikan lari. Setelah darah mencapai `retreatResumeHealth` (default 16) bot langsung kembali menyerang dengan senjata terbaik. Kalau tidak ada makanan sama sekali, bot tetap lari sampai `retreatFleeTimeoutMs` habis dan memberi warning. Selama lari shield diturunkan karena memblok memperlambat gerak.
 
 ### Shield dan prediksi serangan saat PvP
 
-Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. Saat bot sendiri memukul, memanah, atau makan, shield diturunkan sebentar supaya aksinya tetap keluar, lalu diangkat lagi di tick berikutnya. Selama retreat karena darah rendah shield tetap siaga, jadi bot tidak terkena hit gratis saat menjauh. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
+Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. Saat bot sendiri memukul, memanah, atau makan, shield diturunkan sebentar supaya aksinya tetap keluar, lalu diangkat lagi di tick berikutnya. Saat lari karena darah rendah shield diturunkan dulu supaya larinya cepat, lalu otomatis aktif lagi begitu bot kembali menyerang. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
 
 Saat mode multi-bot, `attack <nama player>` tanpa `--bot` mengirim semua bot yang online dan idle; `attack <nama player> --bot 2` hanya bot itu. CombatManager otomatis dimatikan selama job attack agar tidak menukar senjata di tengah tarikan panah, lalu dinyalakan lagi setelah job selesai.
 
@@ -520,4 +523,4 @@ Konfigurasi `gamemode`:
 npm test
 ```
 
-Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, retreat + heal), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, tambang langsung blok dalam jangkauan (tanpa antre pathfinding), shield PvP (prediksi ayunan lawan), container, dan storage. Tes tidak memerlukan server Minecraft.
+Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, lari zigzag + makan saat darah rendah), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, tambang langsung blok dalam jangkauan (tanpa antre pathfinding), shield PvP (prediksi ayunan lawan), container, dan storage. Tes tidak memerlukan server Minecraft.

@@ -96,9 +96,10 @@ const DEFAULTS = {
       retreatHealth: 10,
       retreatResumeHealth: 16,
       retreatDistance: 12,
-      retreatRadius: 14,
-      retreatHealTimeoutMs: 45000,
-      retreatMoveTimeoutMs: 12000
+      retreatTickMs: 200,
+      retreatFleeTimeoutMs: 15000,
+      retreatZigzagDeg: 35,
+      retreatZigzagMs: 400
     },
     shield: {
       enabled: true,
