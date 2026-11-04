@@ -394,6 +394,12 @@ class Cli {
     console.log(`Blueprint: ${blueprint.name} (${blueprint.format})`)
     console.log(`Ukuran   : ${blueprint.size.x} x ${blueprint.size.y} x ${blueprint.size.z} (${blueprint.volume} volume)`)
     console.log(`Blok     : ${blueprint.blocks.length} (${requirements.totalBlocks} item)`)
+    if (blueprint.transform) {
+      const parts = []
+      if (blueprint.transform.rotate) parts.push(`rotate ${blueprint.transform.rotate}° searah jarum jam`)
+      if (blueprint.transform.mirror) parts.push(`mirror sumbu ${blueprint.transform.mirror}`)
+      console.log(`Transform: ${parts.join(', ')}`)
+    }
 
     const rows = [...requirements.items.values()].sort((a, b) => b.count - a.count)
     console.log('--- Material ---')

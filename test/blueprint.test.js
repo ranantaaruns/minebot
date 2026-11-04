@@ -159,6 +159,35 @@ test('loadBlueprint normalizes coordinates and computes volume', async () => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
+test('loadBlueprint menerapkan rotate dan mirror pada blok', async () => {
+  const palette = [{ Name: nbt.string('minecraft:air') }, { Name: nbt.string('minecraft:stone') }]
+  const buffer = litematicBuffer({
+    palette,
+    values: [1, 1],
+    size: { x: 2, y: 1, z: 1 },
+    position: { x: 0, y: 0, z: 0 }
+  })
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcbot-'))
+  const file = path.join(dir, 'baris.litematic')
+  fs.writeFileSync(file, buffer)
+
+  const plain = await loadBlueprint(file, { maxVolume: 100 })
+  assert.deepEqual(plain.size, { x: 2, y: 1, z: 1 })
+  assert.equal(plain.transform, undefined)
+
+  const rotated = await loadBlueprint(file, { maxVolume: 100, rotate: 90 })
+  assert.deepEqual(rotated.size, { x: 1, y: 1, z: 2 })
+  assert.equal(rotated.blocks.length, 2)
+  assert.deepEqual(rotated.transform, { rotate: 90, mirror: null })
+
+  const mirrored = await loadBlueprint(file, { maxVolume: 100, mirror: 'x' })
+  assert.deepEqual(mirrored.size, { x: 2, y: 1, z: 1 })
+  assert.deepEqual(mirrored.transform, { rotate: 0, mirror: 'x' })
+
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
 test('normalizeBlueprint rejects empty structures and strips duplicates', () => {
   assert.throws(() => normalizeBlueprint({ blocks: [], name: 'x' }, 'x.litematic'), /tidak memiliki blok/)
 

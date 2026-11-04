@@ -4,6 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const { parseLitematic } = require('./litematic')
 const { parseSchematic } = require('./schematic')
+const { transformBlocks } = require('./transform')
 
 const EXTENSIONS = new Set(['.schem', '.schematic', '.litematic', '.nbt'])
 
@@ -123,7 +124,16 @@ async function loadBlueprint (filePath, options = {}) {
     throw new Error(`Gagal membaca blueprint: ${lastError ? lastError.message : 'format tidak didukung'}`)
   }
 
+  const rotate = Number(options.rotate || 0)
+  const mirror = options.mirror || null
+  if (rotate || mirror) {
+    parsed = { ...parsed, blocks: transformBlocks(parsed.blocks, { rotate, mirror }) }
+  }
+
   const blueprint = normalizeBlueprint(parsed, resolved)
+  if (rotate || mirror) {
+    blueprint.transform = { rotate: ((rotate % 360) + 360) % 360, mirror }
+  }
   if (blueprint.volume > maxVolume) {
     throw new Error(
       `Bangunan terlalu besar: ${blueprint.volume.toLocaleString('id-ID')} blok volume ` +
