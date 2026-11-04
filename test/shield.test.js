@@ -79,7 +79,7 @@ test('lawan yang bergerak mendekat dianggap ancaman', async () => {
   assert.equal(raised, true, 'lawan mendekat cepat diprediksi akan memukul')
 })
 
-test('shield turun saat bot memukul lalu naik lagi setelah cooldown', async () => {
+test('shield tetap terangkat saat bot memukul (Java: off-hand tidak ikut turun)', async () => {
   const bot = shieldBot()
   const guard = new ShieldGuard(bot, { shield: { blockRange: 4 } }, silentLogger)
   const enemy = enemyAt(3)
@@ -87,12 +87,52 @@ test('shield turun saat bot memukul lalu naik lagi setelah cooldown', async () =
   await guard.update(enemy, 3)
   assert.equal(guard.blocking, true)
 
-  await guard.update(enemy, 3, { attacking: true })
-  assert.equal(guard.blocking, false, 'shield turun supaya pukulan keluar')
+  await guard.update(enemy, 3)
+  assert.equal(guard.blocking, true, 'tick berikutnya shield masih terangkat')
+  assert.equal(bot.deactivateCalls, 0, 'memukul tidak menurunkan shield')
+  assert.equal(bot.activateCalls.length, 1, 'activate tidak dikirim ulang tanpa perlu')
+})
+
+test('shield turun saat bot butuh tangan kanan (makan/memanah)', async () => {
+  const bot = shieldBot()
+  const guard = new ShieldGuard(bot, { shield: { blockRange: 4 } }, silentLogger)
+  const enemy = enemyAt(3)
+
+  await guard.update(enemy, 3)
+  assert.equal(guard.blocking, true)
+
+  await guard.update(enemy, 3, { needsHand: true })
+  assert.equal(guard.blocking, false, 'shield turun supaya makan/memanah bisa')
   assert.equal(bot.deactivateCalls, 1)
 
   await guard.update(enemy, 3)
   assert.equal(guard.blocking, true, 'shield naik lagi di tick berikutnya')
+})
+
+test('shield dikirim ulang berkala kalau state-nya bisa hilang diam-diam', async () => {
+  const bot = shieldBot()
+  const guard = new ShieldGuard(bot, { shield: { blockRange: 4, refreshMs: 1 } }, silentLogger)
+  const enemy = enemyAt(3)
+
+  await guard.update(enemy, 3)
+  assert.equal(bot.activateCalls.length, 1)
+
+  await new Promise(resolve => setTimeout(resolve, 5))
+  await guard.update(enemy, 3)
+
+  assert.ok(bot.activateCalls.length >= 2, 'activate dikirim ulang setelah refreshMs')
+  assert.equal(guard.stats.refreshed >= 1, true)
+})
+
+test('shield yang sudah di off-hand tetap dikenali walau tidak ada di daftar inventory', async () => {
+  const bot = shieldBot({ withShield: false })
+  bot.inventory.slots[45] = { name: 'shield', type: 442, count: 1 }
+
+  const guard = new ShieldGuard(bot, {}, silentLogger)
+
+  assert.equal(guard.hasShield(), true)
+  assert.equal(await guard.update(enemyAt(3), 3), true)
+  assert.equal(guard.blocking, true)
 })
 
 test('tanpa shield di inventory bot tetap aman (tidak error)', async () => {

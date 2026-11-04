@@ -24,9 +24,11 @@ function offHandIsShield (bot) {
   }
 }
 
-// Penjaga shield untuk PvP: memasang shield di off-hand, mengangkatnya saat lawan
-// berada dalam jangkauan pukulan atau saat gerakan lawan diprediksi menyerang,
-// dan menurunkannya saat bot sendiri ingin memukul/memanah/makan.
+// Penjaga shield untuk PvP. Shield dipasang di off-hand, diangkat selama lawan
+// berada dalam jangkauan (atau saat gerakannya diprediksi memukul), dan TETAP
+// terangkat walaupun bot memukul — di Java pukulan tangan utama tidak menurunkan
+// block shield off-hand. Hanya aksi yang butuh tangan kanan (makan, memanah)
+// yang menurunkannya.
 class ShieldGuard {
   constructor (bot, config, logger) {
     this.bot = bot
@@ -34,18 +36,21 @@ class ShieldGuard {
     this.settings = {
       enabled: true,
       blockRange: 4.5,
-      predictMs: 350,
+      predictMs: 400,
       approachWindow: 2.5,
       equipTimeoutMs: 2000,
+      refreshMs: 900,
+      face: true,
       ...(config?.shield || config?.combat?.shield || {})
     }
 
     this.blocking = false
+    this.blockingSince = 0
     this.equipped = false
     this.raiseUntil = 0
     this.target = null
     this.listeners = null
-    this.stats = { raised: 0, predicted: 0 }
+    this.stats = { raised: 0, predicted: 0, refreshed: 0 }
   }
 
   get enabled () {
@@ -53,6 +58,8 @@ class ShieldGuard {
   }
 
   hasShield () {
+    if (offHandIsShield(this.bot)) return true
+    if (this.equipped && !this.bot?.inventory?.slots) return true
     return Boolean(findShield(this.bot))
   }
 
@@ -63,10 +70,13 @@ class ShieldGuard {
   start () {
     if (!this.enabled || this.listeners) return false
     const onSwing = entity => this.noteSwing(entity)
-    // Shield bisa dinonaktifkan (mis. dipukul axe) tanpa kita tahu; anggap turun
-    // supaya tick berikutnya mengangkatnya lagi.
+    // Shield bisa hilang statusnya tanpa kita tahu (kena axe, makan, ganti item);
+    // tandai turun supaya tick berikutnya mengangkatnya lagi.
     const onHurt = entity => {
-      if (entity && entity === this.bot?.entity) this.blocking = false
+      if (entity && entity === this.bot?.entity) {
+        this.blocking = false
+        this.blockingSince = 0
+      }
     }
     this.listeners = { swing: onSwing, hurt: onHurt }
     try { this.bot.on?.('entitySwingArm', onSwing) } catch {}
@@ -78,6 +88,7 @@ class ShieldGuard {
     this.lower()
     if (!this.listeners) return
     try { this.bot.removeListener?.('entitySwingArm', this.listeners.swing) } catch {}
+    try { this.bot.removeListener?.('entityHurt', this.listeners.hurt) } catch {}
     this.listeners = null
   }
 
@@ -89,7 +100,7 @@ class ShieldGuard {
     const distance = this._distanceTo(entity)
     if (distance > Number(this.settings.blockRange) + Number(this.settings.approachWindow)) return false
 
-    this.raiseUntil = Date.now() + (Number(this.settings.predictMs) || 350)
+    this.raiseUntil = Date.now() + (Number(this.settings.predictMs) || 400)
     this.stats.predicted++
     return true
   }
@@ -121,7 +132,7 @@ class ShieldGuard {
 
   async _ensureEquipped () {
     const shield = findShield(this.bot)
-    if (!shield) return false
+    if (!shield) return offHandIsShield(this.bot)
     if (this.equipped && offHandIsShield(this.bot)) return true
     if (this.equipped && !this.bot?.inventory?.slots) return true
     try {
@@ -138,13 +149,29 @@ class ShieldGuard {
     }
   }
 
-  async raise () {
+  // Shield hanya memblok serangan dari depan, jadi hadapkan bot ke lawan selama
+  // tidak sedang jalan mengikuti pathfinder (yang memakai yaw sendiri).
+  async _face (entity) {
+    if (this.settings.face === false) return
+    const position = entity?.position
+    if (!position || typeof this.bot.lookAt !== 'function') return
+    try { if (this.bot.pathfinder?.isMoving?.()) return } catch {}
+    const height = (Number(entity.height) || 1.8) * 0.8
+    try { await this.bot.lookAt(position.offset(0, height, 0), true) } catch {}
+  }
+
+  async raise (entity = null) {
     if (!this.enabled) return false
-    if (this.blocking) return true
+    if (this.blocking) {
+      this._refresh()
+      return true
+    }
     if (!await this._ensureEquipped()) return false
+    await this._face(entity || this.target)
     try {
       this.bot.activateItem(true)
       this.blocking = true
+      this.blockingSince = Date.now()
       this.stats.raised++
       return true
     } catch (err) {
@@ -153,18 +180,32 @@ class ShieldGuard {
     }
   }
 
+  // Kirim ulang state block secara berkala: kalau satu paket hilang atau server
+  // menurunkan shield tanpa kita tahu, bot tidak berhenti memblok selamanya.
+  _refresh () {
+    const refreshMs = Number(this.settings.refreshMs) || 0
+    if (refreshMs <= 0) return false
+    if (Date.now() - this.blockingSince < refreshMs) return false
+    try { this.bot.deactivateItem() } catch {}
+    try { this.bot.activateItem(true) } catch {}
+    this.blockingSince = Date.now()
+    this.stats.refreshed++
+    return true
+  }
+
   lower () {
     if (!this.blocking) return false
     try { this.bot.deactivateItem() } catch {}
     this.blocking = false
+    this.blockingSince = 0
     return true
   }
 
-  // Dipanggil tiap tick PvP. attacking=true berarti bot sedang memukul, sehingga
-  // shield harus turun sebentar supaya pukulan tetap keluar.
-  async update (entity, distance, { attacking = false } = {}) {
+  // Dipanggil tiap tick PvP. needsHand=true hanya untuk aksi yang memakai tangan
+  // kanan (makan/minum/memanah); memukul dengan senjata TIDAK menurunkan shield.
+  async update (entity, distance, { needsHand = false } = {}) {
     if (!this.enabled) return false
-    if (attacking) {
+    if (needsHand) {
       this.lower()
       return false
     }
@@ -176,7 +217,7 @@ class ShieldGuard {
       this.lower()
       return false
     }
-    return this.raise()
+    return this.raise(entity)
   }
 }
 

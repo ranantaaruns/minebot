@@ -7,6 +7,7 @@ const { bestWeapon } = require('./combat')
 const { applyMovements } = require('../movements')
 const { ShieldGuard } = require('./shield')
 const { fleeFrom } = require('./flee')
+const { jumpCrit, canCrit } = require('./crit')
 
 const ARROW_NAMES = new Set(['arrow', 'spectral_arrow', 'tipped_arrow'])
 const BOW_SCORES = { bow: 10, crossbow: 8 }
@@ -108,6 +109,10 @@ class PlayerHunter {
       retreatFleeTimeoutMs: 15000,
       retreatZigzagDeg: 35,
       retreatZigzagMs: 400,
+      critEnabled: true,
+      critTickMs: 20,
+      critRiseTimeoutMs: 250,
+      critFallTimeoutMs: 500,
       ...(combat.hunt || {})
     }
 
@@ -193,11 +198,11 @@ class PlayerHunter {
 
       const distance = this.bot.entity.position.distanceTo(entity.position)
       this.shield.setTarget(entity)
-      await this.shield.update(entity, distance, { attacking: false })
+      await this.shield.update(entity, distance)
 
       if (distance <= Number(this.settings.meleeRange)) {
         this._stopPath()
-        if (await this.attackMelee(entity, distance)) stats.hits++
+        if (await this.attackMelee(entity, distance, stats)) stats.hits++
       } else if (this._bowReady() && distance <= Number(this.settings.bowRange)) {
         this._stopPath()
         if (await this.shoot(entity, distance, cancellation)) stats.shots++
@@ -282,6 +287,7 @@ class PlayerHunter {
     }
 
     try {
+      this.shield.lower()
       await withTimeout(this.bot.equip(choice.item, 'hand'), 2000, 'Equip makanan timeout')
       await withTimeout(this.bot.consume(), 5000, 'Makan timeout')
       this.logger?.info(`Makan ${choice.item.name} sambil lari (health=${this._health()})`)
@@ -320,23 +326,48 @@ class PlayerHunter {
     }
   }
 
-  async attackMelee (entity, distance) {
+  async attackMelee (entity, distance, stats = null) {
     const now = Date.now()
     if (now < this.nextAttackAt) return false
     if (distance > Number(this.settings.meleeRange) + 0.6) return false
     if (!await this.equipMelee()) return false
 
     this.nextAttackAt = now + this.attackCooldownMs
-    this.shield.lower()
     try {
       const height = (Number(entity.height) || 1.8) * 0.8
       await this.bot.lookAt(entity.position.offset(0, height, 0), true)
+    } catch (err) {
+      this.logger?.debug(`Gagal menghadap target: ${err.message}`)
+    }
+
+    // Melompat lalu memukul saat jatuh = critical hit. Shield tetap terangkat
+    // karena pukulan tangan utama tidak menurunkan block off-hand.
+    const crit = await this._jumpCrit(entity)
+    if (crit.attacked) {
+      if (stats) stats.crits = (stats.crits || 0) + 1
+      return true
+    }
+
+    try {
       this.bot.attack(entity)
       return true
     } catch (err) {
       this.logger?.debug(`Serangan gagal: ${err.message}`)
       return false
     }
+  }
+
+  async _jumpCrit (entity) {
+    if (this.settings.critEnabled === false) return { attacked: false, crit: false }
+    if (!canCrit(this.bot)) return { attacked: false, crit: false }
+    const result = await jumpCrit(this.bot, entity, {
+      tickMs: Number(this.settings.critTickMs) || 20,
+      riseTimeoutMs: Number(this.settings.critRiseTimeoutMs) || 250,
+      fallTimeoutMs: Number(this.settings.critFallTimeoutMs) || 500,
+      maxRange: Number(this.settings.meleeRange) + 1.2
+    })
+    if (result.crit) this.logger?.debug('Critical hit: memukul saat jatuh')
+    return result
   }
 
   async shoot (entity, distance, cancellation) {
@@ -349,7 +380,7 @@ class PlayerHunter {
     this.nextShotAt = now + drawMs + 150
 
     try {
-      this.shield.lower()
+      await this.shield.update(entity, distance, { needsHand: true })
       if (this.bot.heldItem?.type !== bow.item.type) {
         await withTimeout(this.bot.equip(bow.item, 'hand'), 2000, 'Equip bow timeout')
       }
@@ -391,6 +422,7 @@ class PlayerHunter {
       target,
       reason,
       hits: stats.hits,
+      crits: stats.crits || 0,
       shots: stats.shots,
       retreats: stats.retreats || 0,
       durationMs: Date.now() - stats.startedAt
@@ -402,7 +434,7 @@ function logHuntResult (logger, result) {
   if (!result || result.cancelled) return
   const seconds = ((result.durationMs || 0) / 1000).toFixed(1)
   if (result.killed) {
-    logger?.info(`Target ${result.target} mati (${result.hits} pukulan, ${result.shots} panah, ${seconds}s)`)
+    logger?.info(`Target ${result.target} mati (${result.hits} pukulan, ${result.crits || 0} kritikal, ${result.shots} panah, ${seconds}s)`)
   } else {
     logger?.warn(`Gagal membunuh ${result.target}: ${reasonText(result.reason)} (${seconds}s)`)
   }

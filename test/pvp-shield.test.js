@@ -86,7 +86,7 @@ test('PvP: shield dipasang di off-hand dan diangkat saat lawan dalam jangkauan',
   assert.ok(bot.actions.some(([kind]) => kind === 'attack'), 'bot tetap menyerang')
 })
 
-test('PvP: shield turun saat memukul lalu naik lagi', async () => {
+test('PvP: shield tetap terangkat saat memukul (block tidak putus)', async () => {
   const bot = shieldPvpBot()
   withTarget(bot, new Vec3(2, 64, 0))
 
@@ -96,11 +96,11 @@ test('PvP: shield turun saat memukul lalu naik lagi', async () => {
   const kinds = bot.actions.map(([kind]) => kind)
   const firstRaise = kinds.indexOf('activate')
   const firstAttack = kinds.indexOf('attack')
-  const secondRaise = kinds.indexOf('activate', firstRaise + 1)
+  const deactivateBeforeAttack = kinds.slice(0, firstAttack).includes('deactivate')
 
   assert.ok(firstRaise >= 0 && firstAttack > firstRaise, 'shield naik sebelum pukulan')
-  assert.ok(kinds.includes('deactivate'), 'shield diturunkan untuk memukul')
-  assert.ok(secondRaise > firstAttack, 'shield naik lagi setelah memukul')
+  assert.equal(deactivateBeforeAttack, false, 'shield tidak diturunkan untuk memukul')
+  assert.ok(kinds.filter(kind => kind === 'attack').length >= 1)
 })
 
 test('PvP: ayunan lawan dari jarak 2 blok di luar jangkauan tetap memicu block', async () => {
