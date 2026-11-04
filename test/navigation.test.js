@@ -173,12 +173,56 @@ test('tower supply refuses to gather while in water', async () => {
   assert.equal(result.reason, 'in-water')
 })
 
+test('tower supply stops retrying after a fruitless attempt', async () => {
+  const bot = fakeBot([], new Vec3(0, 64, 0))
+  let attempts = 0
+  const materials = {
+    minedCount: 0,
+    async ensureItem () {
+      attempts++
+      return { ok: false, have: 0, reason: 'not-found' }
+    }
+  }
+  const supply = new TowerSupply(bot, supplyConfig(), silentLogger, materials)
+  const target = new Vec3(0, 72, 0)
+
+  const first = await supply.ensure(target)
+  const second = await supply.ensure(target)
+
+  assert.equal(first.ok, false)
+  assert.equal(second.ok, false)
+  assert.equal(second.reason, 'unavailable')
+  assert.equal(attempts, 1, 'pencarian blok tower tidak diulang terus-menerus')
+})
+
 test('gather helpers prefer grass and avoid digging under the bot', () => {
   assert.equal(preferredRank('grass_block', ['grass_block', 'dirt']), 0)
   assert.equal(preferredRank('dirt', ['grass_block', 'dirt']), 1)
   assert.equal(preferredRank('cobblestone', ['grass_block', 'dirt']), 2)
   assert.equal(isUnderBot(new Vec3(0, 63, 0), new Vec3(0.5, 64.5, 0.5)), true)
   assert.equal(isUnderBot(new Vec3(2, 63, 0), new Vec3(0.5, 64.5, 0.5)), false)
+})
+
+test('gather movements allow 1x1 towers with common mining blocks', () => {
+  const bot = fakeBot()
+  const movements = applyMovements(bot, 'gather', {
+    allowTower: true,
+    towerBlocks: ['dirt']
+  })
+
+  assert.equal(movements.allow1by1towers, true)
+  const names = movements.scafoldingBlocks.map(id => mcData.items[id].name)
+  assert.ok(names.includes('dirt'))
+  assert.ok(names.includes('cobblestone'), 'blok tambang umum harus bisa dipakai menumpuk')
+  assert.ok(names.includes('deepslate'))
+})
+
+test('gather movements still refuse towers when the owner disabled them', () => {
+  const bot = fakeBot()
+  const movements = applyMovements(bot, 'gather', { allowTower: false, towerBlocks: ['dirt'] })
+
+  assert.equal(movements.allow1by1towers, false)
+  assert.deepEqual(movements.scafoldingBlocks, [])
 })
 
 test('travel movements use the configured swim liquid cost', () => {

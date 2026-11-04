@@ -208,7 +208,15 @@ Saat owner berada di tebing atau tempat yang lebih tinggi, bot bisa memasang tow
 - `protectRadius` mencegah bot menambang block di sekitar posisi owner.
 - Bot tidak menambang block tepat di bawah kakinya supaya tidak jatuh.
 - Kalau block tetap tidak ditemukan setelah `maxAttempts`, bot berhenti sementara selama `cooldownMs` lalu mencoba lagi.
+- Kalau pencarian block tower gagal total, bot tidak diam: ia melepas rute lama dan tetap mengikuti owner sebisanya (rute biasa). Pencarian block tower berikutnya ditunda `retryCooldownMs` (default `180000` = 3 menit) supaya bot tidak berulang kali berhenti menambang.
 - Config lama tetap kompatibel. Kalau bagian `owner.allowTower` atau `owner.towerGather` belum ada, bot memakai nilai default di atas.
+
+## Menambang dan towering
+
+Saat job `gather`/`mine`, bot memakai movements khusus tambang sehingga ia boleh menumpuk 1×1 memakai block hasil tambang sendiri (`cobblestone`, `cobbled_deepslate`, `stone`, `deepslate`, `tuff`, `dirt`, dan sejenisnya) untuk menjangkau block yang lebih tinggi. Ini mencegah bot diam dengan alasan tidak ada block untuk tower saat menambang.
+
+- `owner.allowTower: false` tetap mematikan towering, termasuk saat menambang.
+- Kalau block benar-benar tidak terjangkau (pathfinder `NoPath` dua kali), bot menghentikan pencarian block lain untuk job itu, membersihkan goal lama, dan lanjut ke tugas berikutnya dengan warning `Blok tambang tidak terjangkau (perlu menumpuk/naik)`.
 
 ## Berenang saat follow
 
@@ -387,7 +395,7 @@ Konfigurasi `gamemode`:
 - Entity, isi chest, teks sign, dan data tile tidak ikut dibangun.
 - Build bisa gagal di area protected, claim, atau saat anti-cheat server ketat.
 - Scaffold otomatis hanya untuk target yang masih terjangkau setelah naik beberapa blok; struktur menggantung tinggi bisa butuh penanganan manual.
-- Tower follow membutuhkan block yang bisa dipasang. Kalau tidak ada dirt/grass, cobblestone, planks, atau scaffolding di sekitar, bot akan berhenti dengan warning.
+- Tower follow membutuhkan block yang bisa dipasang. Kalau tidak ada dirt/grass, cobblestone, planks, atau scaffolding di sekitar, bot mencatat warning sekali lalu tetap mengikuti owner dengan rute biasa (tanpa tower) selama 3 menit sebelum mencoba mencari block lagi.
 - Bot tidak memilih block berdasarkan klaim atau aturan server. Gunakan `owner.towerGather.protectRadius` dan pastikan menambang area tersebut diizinkan.
 - Mode renang hanya untuk permukaan air. Owner yang berada di bawah air atau di balik tebing tinggi belum dijamin.
 - Kalau makanan habis, bot akan berhenti dan menunggu owner. Bot tidak mencari chest atau berburu makanan otomatis.

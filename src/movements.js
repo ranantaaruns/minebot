@@ -100,11 +100,30 @@ function enhanceLadderMovements (movements, bot) {
   return movements
 }
 
+const GATHER_SCAFFOLD_BLOCKS = [
+  'cobblestone', 'cobbled_deepslate', 'stone', 'deepslate', 'tuff', 'andesite',
+  'diorite', 'granite', 'netherrack', 'blackstone', 'basalt', 'calcite', 'dirt',
+  'grass_block', 'oak_planks', 'scaffolding'
+]
+
+function scaffoldNames (mode, options) {
+  const configured = Array.isArray(options.towerBlocks) ? options.towerBlocks : []
+  if (mode !== 'gather') return configured
+  // Saat menambang, blok hasil tambang (batu, deepslate, dst.) harus bisa dipakai
+  // menumpuk 1x1 supaya pathfinder tidak menyerah karena "tidak ada blok untuk tower".
+  const names = [...configured]
+  for (const name of GATHER_SCAFFOLD_BLOCKS) {
+    if (!names.includes(name)) names.push(name)
+  }
+  return names
+}
+
 function applyMovements (bot, mode = 'travel', options = {}) {
   const movements = new Movements(bot)
   const followMode = mode === 'travel' || mode === 'follow'
-  const towerIds = followMode ? resolveScaffoldIds(bot, options.towerBlocks) : []
-  const allowTower = followMode && options.allowTower !== false
+  const towerMode = followMode || mode === 'gather'
+  const towerIds = towerMode ? resolveScaffoldIds(bot, scaffoldNames(mode, options)) : []
+  const allowTower = towerMode && options.allowTower !== false
 
   const liquidCost = Number(options.liquidCost ?? options.swim?.liquidCost)
   const inNether = isNether(bot)
@@ -114,7 +133,7 @@ function applyMovements (bot, mode = 'travel', options = {}) {
   movements.allowParkour = mode !== 'build'
   movements.allowSprinting = mode !== 'build' && options.allowSprinting !== false
   movements.maxDropDown = inNether ? 2 : (mode === 'build' ? 2 : 4)
-  movements.scafoldingBlocks = towerIds
+  movements.scafoldingBlocks = allowTower ? towerIds : []
   movements.liquidCost = inNether
     ? 2000
     : (mode === 'gather'

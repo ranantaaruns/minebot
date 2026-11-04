@@ -51,6 +51,10 @@ class MaterialManager {
       protectRadius: overrides.protectRadius ?? this.gatherDir.protectRadius,
       maxMinePerJob: overrides.maxMinePerJob ?? this.gatherDir.maxMinePerJob,
       minHealth: this.config.safety.minHealth,
+      movementOptions: {
+        allowTower: this.config.owner?.allowTower !== false,
+        towerBlocks: this.config.owner?.towerBlocks
+      },
       ...overrides
     }
   }

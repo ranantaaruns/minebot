@@ -5,6 +5,7 @@ const Vec3 = require('vec3')
 const { sleep, withTimeout } = require('./util/async')
 const { applyMovements } = require('./movements')
 const { isNether, findNearbyPortal } = require('./safety/nether')
+const { RETRY_AFTER_FAIL_MS } = require('./navigation/tower-supply')
 
 const STUCK_MOVEMENT_THRESHOLD = 0.25
 
@@ -62,6 +63,7 @@ class OwnerTracker {
     this.towerGathering = false
     this.towerAttempts = 0
     this.towerCooldownUntil = 0
+    this.towerBlockedUntil = 0
 
     this._onPathUpdate = results => {
       if (results?.status !== 'noPath') return
@@ -200,6 +202,7 @@ class OwnerTracker {
     this.target = coords ? new Vec3(coords.x, coords.y, coords.z) : null
     this.towerAttempts = 0
     this.towerCooldownUntil = 0
+    this.towerBlockedUntil = 0
   }
 
   getOwnerEntity () {
@@ -365,6 +368,11 @@ class OwnerTracker {
       this.towerCooldownUntil = 0
       this.towerAttempts = 0
     }
+    if (this.towerBlockedUntil) {
+      if (Date.now() < this.towerBlockedUntil) return
+      this.towerBlockedUntil = 0
+      this.towerUnavailableWarned = false
+    }
 
     const point = this._currentPoint()
     if (!point || !this.bot.entity) return
@@ -395,8 +403,21 @@ class OwnerTracker {
       if (this.stopped || this.paused || this.commanding || this.foodPaused || this.waterNavigator?.busy) return
       if (!result.ok) {
         this.logger.debug(`Tower supply belum berhasil: ${result.reason || 'blok tidak ditemukan'}`)
+        if (result.reason === 'unavailable') {
+          this.towerAttempts = 0
+          const cooldown = Number(settings.retryCooldownMs) || RETRY_AFTER_FAIL_MS
+          this.towerBlockedUntil = Date.now() + cooldown
+          if (!this.towerUnavailableWarned) {
+            this.towerUnavailableWarned = true
+            this.logger.warn('Blok untuk tower tidak tersedia; bot lanjut mengikuti owner sebisanya')
+          }
+        }
+        // Biarkan tick() berikutnya (maks 2 detik) menyusun ulang rute follow biasa,
+        // supaya bot tetap bergerak dan tidak diam menunggu blok tower.
+        this._cancelFollowGoal()
         return
       }
+      this.towerUnavailableWarned = false
       this._startFollowGoal(this._currentPoint() || point)
     } finally {
       this.towerGathering = false
@@ -618,6 +639,7 @@ class OwnerTracker {
       this.stuckRetries = 0
       this.towerAttempts = 0
       this.towerCooldownUntil = 0
+      this.towerBlockedUntil = 0
       if (this.bot.pathfinder?.goal) this._cancelFollowGoal()
       return
     }

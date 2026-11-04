@@ -35,12 +35,15 @@ function towerRequirement (botY, pointY, current, options = {}) {
   }
 }
 
+const RETRY_AFTER_FAIL_MS = 3 * 60 * 1000
+
 class TowerSupply {
   constructor (bot, config, logger, materials) {
     this.bot = bot
     this.config = config
     this.logger = logger
     this.materials = materials
+    this.retryUntil = 0
     this._mcData = null
   }
 
@@ -87,6 +90,11 @@ class TowerSupply {
     }
     if (!this.materials || !this.mcData) {
       return { ok: false, have: this.have(), reason: 'not-ready' }
+    }
+    if (Date.now() < this.retryUntil) {
+      // Percobaan sebelumnya sudah menghabiskan waktu lama tanpa hasil; jangan
+      // ulangi terus-menerus karena bot jadi diam menunggu pencarian blok.
+      return { ok: false, have: this.have(), reason: 'unavailable' }
     }
 
     const current = this.have()
@@ -141,6 +149,7 @@ class TowerSupply {
       ])
     } catch (err) {
       this.logger?.warn(`Gagal mencari blok tower: ${err.message}`)
+      this._markUnavailable(settings)
       return { ok: false, have: this.have(), needed: desired, reason: err.message }
     } finally {
       clearTimeout(timer)
@@ -154,8 +163,10 @@ class TowerSupply {
 
     const after = this.have()
     if (after > current) {
+      this.retryUntil = 0
       this.logger?.info(`Tower supply: ${after - current} blok didapat (${after}/${desired})`)
     } else {
+      this._markUnavailable(settings)
       this.logger?.warn(`Tower supply gagal: ${result?.reason || 'blok tidak ditemukan'}`)
     }
 
@@ -167,6 +178,11 @@ class TowerSupply {
       reason: result?.ok ? null : result?.reason
     }
   }
+
+  _markUnavailable (settings = this.settings) {
+    const cooldown = Number(settings.retryCooldownMs) || RETRY_AFTER_FAIL_MS
+    this.retryUntil = Date.now() + cooldown
+  }
 }
 
-module.exports = { TowerSupply, towerBlockCount, towerRequirement }
+module.exports = { TowerSupply, towerBlockCount, towerRequirement, RETRY_AFTER_FAIL_MS }

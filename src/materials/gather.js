@@ -3,6 +3,7 @@
 const { MINE_SOURCES } = require('./sources')
 const { countItemName } = require('../util/inventory')
 const { withTimeout } = require('../util/async')
+const { applyMovements } = require('../movements')
 
 function hasSilkTouch (bot) {
   try {
@@ -52,7 +53,8 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
     timeoutPerBlockMs = 45000,
     preferredBlocks = [],
     allowHandMining = false,
-    avoidUnderBot = false
+    avoidUnderBot = false,
+    movementOptions = {}
   } = options
 
   const source = MINE_SOURCES[itemName]
@@ -114,9 +116,22 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
 
   logger?.info(`Menambang ${itemName}: butuh ${wanted}, kandidat ${positions.length} blok`)
 
+  // mineflayer-collectblock memakai ulang movements-nya sendiri (tanpa blok scaffold
+  // yang kita kenal), jadi bot menyerah saat butuh menumpuk 1 blok. Pakai movements
+  // gather kita agar towering 1x1 tetap mungkin selama menambang.
+  if (bot.collectBlock && bot.pathfinder) {
+    try {
+      const movements = applyMovements(bot, 'gather', movementOptions)
+      bot.collectBlock.movements = movements
+    } catch (err) {
+      logger?.debug(`Gagal menyiapkan movements tambang: ${err.message}`)
+    }
+  }
+
   let have = before
   let minedBlocks = 0
   let failures = 0
+  let stalled = 0
   let stopReason = null
 
   for (const pos of positions) {
@@ -163,9 +178,24 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
       )
       minedBlocks++
       materials.minedCount++
+      stalled = 0
     } catch (err) {
       failures++
-      logger?.debug(`Gagal menambang di ${pos}: ${err.message}`)
+      const message = err.message || ''
+      logger?.debug(`Gagal menambang di ${pos}: ${message}`)
+      // Jangan tinggalkan goal pathfinder yang basi: bot bisa diam lama sekali.
+      try { bot.pathfinder?.stop?.() } catch {}
+      try { bot.clearControlStates?.() } catch {}
+
+      if (err.name === 'NoPath' || /no path|timeout/i.test(message)) {
+        stalled++
+        if (stalled >= 2) {
+          logger?.warn('Blok tambang tidak terjangkau (perlu menumpuk/naik); berhenti mencari blok lain')
+          stopReason = 'unreachable'
+          break
+        }
+      }
+
       if (failures >= 8) {
         logger?.warn('Terlalu banyak kegagalan menambang, berhenti')
         break

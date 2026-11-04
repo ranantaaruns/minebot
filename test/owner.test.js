@@ -114,6 +114,53 @@ test('owner gathers tower blocks after pathfinder reports no path', async t => {
   assert.ok(bot.pathfinder.goal instanceof goals.GoalNear)
 })
 
+test('owner keeps following when tower supply fails', async t => {
+  const bot = fakeBot()
+  bot.players.Owner = { entity: { position: new Vec3(10, 72, 0) } }
+  const towerSupply = {
+    async ensure () {
+      return { ok: false, reason: 'not-found' }
+    }
+  }
+  const owner = new OwnerTracker(bot, ownerConfig(), silentLogger, { towerSupply })
+  t.after(() => owner.stop())
+
+  await owner.tick()
+  bot.emit('path_update', { status: 'noPath', path: [] })
+  await new Promise(resolve => setImmediate(resolve))
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(bot.pathfinder.goal, null, 'goal basi dibatalkan setelah tower gagal')
+  await owner.tick()
+  assert.ok(bot.pathfinder.goal instanceof goals.GoalNear, 'bot tidak boleh diam tanpa tujuan')
+})
+
+test('owner stops asking for tower blocks while supply is unavailable', async t => {
+  const bot = fakeBot()
+  bot.players.Owner = { entity: { position: new Vec3(10, 72, 0) } }
+  let ensured = 0
+  const towerSupply = {
+    async ensure () {
+      ensured++
+      return { ok: false, reason: 'unavailable' }
+    }
+  }
+  const owner = new OwnerTracker(bot, ownerConfig(), silentLogger, { towerSupply })
+  t.after(() => owner.stop())
+
+  await owner.tick()
+  bot.emit('path_update', { status: 'noPath', path: [] })
+  await new Promise(resolve => setImmediate(resolve))
+  await new Promise(resolve => setImmediate(resolve))
+  bot.emit('path_update', { status: 'noPath', path: [] })
+  await new Promise(resolve => setImmediate(resolve))
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(ensured, 1)
+  await owner.tick()
+  assert.ok(bot.pathfinder.goal instanceof goals.GoalNear)
+})
+
 test('isStuck detects no movement after the timeout only', () => {
   const last = new Vec3(0, 64, 0)
   const still = new Vec3(0.1, 64, 0)

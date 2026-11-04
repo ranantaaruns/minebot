@@ -56,7 +56,12 @@ async function mineAncientDebris (bot, mcData, materials, count, options = {}) {
   }
 
   // 4. Set movements
-  applyMovements(bot, 'gather', options)
+  const gatherMovements = applyMovements(bot, 'gather', options)
+  if (bot.collectBlock && gatherMovements) {
+    // collectBlock mengganti movements pathfinder dengan miliknya sendiri; pakai
+    // movements gather agar bot tetap bisa menumpuk 1x1 saat mengejar blok.
+    bot.collectBlock.movements = gatherMovements
+  }
 
   const structureAvoidance = bot.structureAvoidance
   let have = before
