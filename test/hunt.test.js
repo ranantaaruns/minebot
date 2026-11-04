@@ -131,16 +131,16 @@ test('arrowCount and bestBow read the inventory', () => {
   assert.equal(bestBow(fakeBot()), null)
 })
 
-test('aimPoint leads a moving target and compensates arrow drop', () => {
-  const entity = playerEntity(new Vec3(0, 64, 0), { velocity: new Vec3(0.2, 0, 0) })
+test('aimPoint memakai simulasi lintasan dan memimpin target bergerak', () => {
+  const bot = fakeBot({ position: new Vec3(0, 64, 0) })
+  const moving = playerEntity(new Vec3(20, 64, 0), { velocity: new Vec3(0.2, 0, 0) })
 
-  const near = aimPoint(entity, 4)
-  const far = aimPoint(entity, 20)
+  const near = aimPoint(bot, playerEntity(new Vec3(4, 64, 0)))
+  const far = aimPoint(bot, playerEntity(new Vec3(20, 64, 0)))
 
   assert.ok(far.y > near.y, 'jarak jauh butuh kompensasi jatuh lebih besar')
-  assert.ok(far.x > near.x, 'target bergerak harus diarahkan di depan')
-  assert.ok(near.x > 0, 'lead mengikuti arah velocity')
-  assert.ok(near.y > 64 + 1, 'membidik di atas kaki target')
+  assert.ok(aimPoint(bot, moving).x > far.x, 'target bergerak dibidik di depan')
+  assert.ok(Math.abs(near.y - 64.9) < 0.6, 'jarak dekat dibidik nyaris lurus ke badan lawan')
 })
 
 test('hunt kills a nearby player with the strongest melee weapon', async () => {

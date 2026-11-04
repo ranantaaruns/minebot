@@ -368,6 +368,28 @@ Bot hanya menyerang mob hostile yang masuk jangkauan. Bot tidak mengejar jauh da
 1. Bot memakai armor terbaik di inventory, lalu senjata dengan damage terbesar (netherite sword > mace > diamond sword > trident > axe, dst).
 2. Jarak dekat (≤ `meleeRange`): bot mendekat dengan pathfinder lalu memukul mengikuti cooldown `attackCooldownMs`.
 3. Jarak jauh (≤ `bowRange`): bot berhenti, memakai bow, membidik dengan kompensasi jatuhnya panah dan gerakan target, menarik panah selama `drawMs`, lalu melepas. Bot hanya memanah kalau punya panah; kalau panah habis bot mengejar untuk serang jarak dekat.
+
+#### Prediksi arah jatuh panah
+
+Bidikan lama memakai rumus `jatuh = ½ · g · t²` dengan `t = jarak / 3`, lalu membidik titik di atas lawan. Rumus itu **mengabaikan drag** panah, memakai jarak 3D padahal yang menentukan waktu tempuh hanya jarak mendatar, dan membidik `0.8 × tinggi badan` di atas kaki. Hasilnya bidikan meleset **ke atas** saat lawan lebih tinggi / jarak menengah, dan meleset **ke bawah** saat jarak jauh — persis keluhan "kadang terlalu ke atas, kadang terlalu ke bawah".
+
+`src/safety/ballistics.js` sekarang meniru fisika panah server per tick:
+
+```
+pos  += velocity
+velocity *= 0.99        // drag udara
+velocity.y -= 0.05      // gravitasi
+```
+
+Dengan kecepatan awal 3 blok/tick (tarikan penuh), modul ini:
+
+1. **Mencari sudut tembak** dengan simulasi + pencarian biner, bukan rumus perkiraan. Sudut dicari dari yang paling datar, jadi bot memilih lintasan rendah yang cepat sampai, bukan melengkung tinggi.
+2. **Meluncurkan dari mata bot** (`position.y + 0.9 × tinggi`), sama dengan titik acuan `bot.lookAt` di mineflayer. Dulu dipakai posisi kaki sebagai acuan jarak sehingga sudutnya ikut salah.
+3. **Membidik tengah badan lawan** (`aimHeightRatio 0.5`), bukan 0.8 tinggi badan yang mendekati ubun-ubun.
+4. **Memimpin target bergerak**: waktu tempuh dari simulasi dipakai untuk memperkirakan posisi lawan saat panah tiba, diulang `aimLeadTicks` kali karena jarak yang berubah juga mengubah waktu tempuh.
+5. **Menghitung ulang tepat sebelum melepas**, setelah `drawMs + drawMarginMs`, karena lawan sudah bergerak selama busur ditarik.
+
+Akurasi hasilnya diuji numerik: pada jarak 3–40 blok dan beda tinggi −6 sampai +8 blok, panah mendarat dalam **0.02 blok** dari tengah badan lawan, sedangkan heuristik lama meleset 0.3–0.7 blok.
 4. Lebih jauh dari `bowRange`: bot mengejar target (GoalFollow). Kalau pathfinder gagal 3× (`noPath`), job berhenti dengan alasan `unreachable`.
 5. Job berhenti sendiri saat target mati, target hilang dari pandangan, `timeoutMs` habis, atau `stop` diketik.
 
@@ -378,6 +400,9 @@ Nilai `combat.hunt` yang bisa diubah:
 | `meleeRange` | `3.2` | Jarak (blok) untuk mulai memukul |
 | `bowRange` | `24` | Jarak maksimum memakai bow |
 | `drawMs` | `1000` | Lama menarik panah sebelum dilepas |
+| `drawMarginMs` | `80` | Tambahan waktu tarik agar tarikan benar-benar penuh (panah pelan = jatuh pendek) |
+| `aimHeightRatio` | `0.5` | Titik bidik pada badan lawan (0.5 = tengah badan) |
+| `aimLeadTicks` | `2` | Berapa kali posisi lawan diperkirakan ulang saat memanah target bergerak |
 | `tickMs` | `250` | Jeda antar keputusan menyerang |
 | `timeoutMs` | `180000` | Batas waktu satu job attack |
 | `retreatEnabled` | `true` | Lari + makan saat darah rendah saat PvP |

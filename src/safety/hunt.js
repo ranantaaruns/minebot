@@ -9,14 +9,10 @@ const { ShieldGuard } = require('./shield')
 const { fleeFrom } = require('./flee')
 const { jumpCrit, canCrit } = require('./crit')
 const { ShieldBreakStrategy } = require('./shieldbreak')
+const { predictAimPoint, MAX_SPEED } = require('./ballistics')
 
 const ARROW_NAMES = new Set(['arrow', 'spectral_arrow', 'tipped_arrow'])
 const BOW_SCORES = { bow: 10, crossbow: 8 }
-
-// Nilai fisika panah Minecraft (per tick): kecepatan tarikan penuh ~3 blok/tick,
-// gravitasi ~0.05 blok/tick^2. Dipakai untuk memprediksi titik bidik.
-const ARROW_SPEED = 3
-const ARROW_GRAVITY = 0.05
 
 const REASON_TEXT = {
   killed: 'target mati',
@@ -74,18 +70,14 @@ function bestBow (bot) {
   return best
 }
 
-function aimPoint (entity, distance) {
+// Titik bidik panah: simulasi lintasan (gravitasi + drag) dan lead target.
+function aimPoint (bot, entity, options) {
+  const point = predictAimPoint(bot, entity, options)
+  if (point) return point
+  // Bot belum punya posisi (mis. belum spawn): jatuh ke bagian tengah badan.
   const position = entity?.position || new Vec3(0, 0, 0)
-  const velocity = entity?.velocity || { x: 0, y: 0, z: 0 }
-  const ticks = Math.max(0, Number(distance) || 0) / ARROW_SPEED
-  const drop = 0.5 * ARROW_GRAVITY * ticks * ticks
   const height = Number(entity?.height) || 1.8
-
-  return new Vec3(
-    position.x + (Number(velocity.x) || 0) * ticks,
-    position.y + height * 0.8 + (Number(velocity.y) || 0) * ticks + drop,
-    position.z + (Number(velocity.z) || 0) * ticks
-  )
+  return position.offset(0, height * 0.5, 0)
 }
 
 class PlayerHunter {
@@ -98,6 +90,9 @@ class PlayerHunter {
       meleeRange: 3.2,
       bowRange: 24,
       drawMs: 1000,
+      drawMarginMs: 80,
+      aimHeightRatio: 0.5,
+      aimLeadTicks: 2,
       tickMs: 250,
       timeoutMs: 180000,
       approachRefreshMs: 800,
@@ -464,18 +459,23 @@ class PlayerHunter {
     const bow = bestBow(this.bot)
     if (!bow || arrowCount(this.bot) <= 0) return false
 
+    // Busur baru penuh pada 20 tick (1000 ms). Tarikan kurang sedikit saja
+    // membuat panah lahir lebih pelan dan jatuh lebih pendek, jadi beri margin.
     const drawMs = Math.max(50, Number(this.settings.drawMs) || 1000)
-    this.nextShotAt = now + drawMs + 150
+    const marginMs = Math.max(0, Number(this.settings.drawMarginMs) || 0)
+    this.nextShotAt = now + drawMs + marginMs + 150
+    const aim = { speed: MAX_SPEED, heightRatio: this.settings.aimHeightRatio, leadIterations: this.settings.aimLeadTicks }
 
     try {
       await this.shield.update(entity, distance, { needsHand: true })
       if (this.bot.heldItem?.type !== bow.item.type) {
         await withTimeout(this.bot.equip(bow.item, 'hand'), 2000, 'Equip bow timeout')
       }
-      await this.bot.lookAt(aimPoint(entity, distance), true)
+      await this.bot.lookAt(aimPoint(this.bot, entity, aim), true)
       this.bot.activateItem()
-      await sleep(drawMs, cancellation)
-      await this.bot.lookAt(aimPoint(entity, distance), true)
+      await sleep(drawMs + marginMs, cancellation)
+      // Lawan sudah bergerak selama menarik busur: hitung ulang tepat sebelum lepas.
+      await this.bot.lookAt(aimPoint(this.bot, entity, aim), true)
       this.bot.deactivateItem()
       return true
     } catch (err) {

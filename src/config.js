@@ -90,6 +90,9 @@ const DEFAULTS = {
       meleeRange: 3.2,
       bowRange: 24,
       drawMs: 1000,
+      drawMarginMs: 80,
+      aimHeightRatio: 0.5,
+      aimLeadTicks: 2,
       tickMs: 250,
       timeoutMs: 180000,
       retreatEnabled: true,
@@ -323,7 +326,7 @@ function validate (config) {
     if (!isObject(config.combat.hunt)) {
       errors.push('combat.hunt harus berupa object')
     } else {
-      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'tickMs', 'timeoutMs']) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs']) {
         const value = Number(config.combat.hunt[key])
         if (!Number.isFinite(value) || value <= 0) {
           errors.push(`combat.hunt.${key} harus lebih dari 0`)
@@ -487,7 +490,7 @@ function loadConfig (configPath) {
       config.combat[key] = Number(config.combat[key])
     }
     if (isObject(config.combat.hunt)) {
-      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'tickMs', 'timeoutMs']) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs']) {
         config.combat.hunt[key] = Number(config.combat.hunt[key])
       }
     }
