@@ -395,8 +395,19 @@ Nilai `combat.shield` untuk memakai shield saat PvP:
 | --- | --- | --- |
 | `enabled` | `true` | Pasang shield di off-hand dan pakai untuk memblok saat PvP |
 | `blockRange` | `4.5` | Jarak (blok) lawan yang membuat shield otomatis diangkat |
-| `predictMs` | `350` | Lama shield tetap terangkat setelah melihat ayunan lawan |
+| `predictMs` | `400` | Lama shield tetap terangkat setelah melihat ayunan lawan |
 | `approachWindow` | `2.5` | Toleransi jarak ekstra untuk lawan yang bergerak mendekat |
+| `refreshMs` | `900` | Interval mengirim ulang state block supaya tidak diam-diam hilang |
+| `face` | `true` | Hadapkan bot ke lawan supaya shield memblok dari depan |
+
+Nilai `combat.hunt` untuk critical hit:
+
+| Opsi | Default | Fungsi |
+| --- | --- | --- |
+| `critEnabled` | `true` | Lompat lalu pukul saat jatuh untuk critical hit |
+| `critTickMs` | `20` | Interval pemeriksaan ketinggian/kecepatan saat melompat |
+| `critRiseTimeoutMs` | `250` | Batas waktu menunggu bot terangkat |
+| `critFallTimeoutMs` | `500` | Batas waktu menunggu bot mulai jatuh |
 
 ### Retreat dan heal saat PvP
 
@@ -406,7 +417,11 @@ Makan berjalan **bersamaan** dengan lari: begitu food di bawah 20, bot memilih m
 
 ### Shield dan prediksi serangan saat PvP
 
-Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. Saat bot sendiri memukul, memanah, atau makan, shield diturunkan sebentar supaya aksinya tetap keluar, lalu diangkat lagi di tick berikutnya. Saat lari karena darah rendah shield diturunkan dulu supaya larinya cepat, lalu otomatis aktif lagi begitu bot kembali menyerang. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
+### Critical hit saat PvP
+
+Setiap kali memukul, bot melompat lalu menahan pukulan sampai **badannya sedang turun** (`velocity.y < 0`, tidak menyentuh tanah). Itu syarat critical hit di Minecraft, jadi damage tiap pukulan naik sekitar 50%. Bot tidak mencoba crit saat di air/lava, di tangga, atau saat sprint — di kondisi itu crit tidak sah, jadi bot memukul biasa tanpa membuang waktu. Kalau lompatan gagal (langit-langit rendah, terhalang blok) atau lawan kabur dari jangkauan, bot langsung memukul normal dalam tick yang sama, jadi tidak ada pukulan yang hilang. Jumlah crit dilaporkan di akhir job: `Target X mati (12 pukulan, 9 kritikal, 0 panah, 14.2s)`.
+
+Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. Shield **tetap terangkat walaupun bot sedang memukul** — di Java pukulan tangan utama tidak memutus block off-hand, dan inilah yang membuat block sebelumnya sering bocor. Shield hanya diturunkan untuk aksi yang benar-benar butuh tangan kanan: makan dan memanah. Supaya tidak pernah "diam-diam mati", bot mengirim ulang state block setiap `refreshMs` dan mengangkatnya lagi setiap kali menerima `entityHurt`. Bot juga menghadapkan badannya ke lawan saat mengangkat shield, karena block hanya berlaku untuk serangan dari depan. Saat lari karena darah rendah shield diturunkan dulu supaya larinya cepat, lalu otomatis aktif lagi begitu bot kembali menyerang. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
 
 Saat mode multi-bot, `attack <nama player>` tanpa `--bot` mengirim semua bot yang online dan idle; `attack <nama player> --bot 2` hanya bot itu. CombatManager otomatis dimatikan selama job attack agar tidak menukar senjata di tengah tarikan panah, lalu dinyalakan lagi setelah job selesai.
 
@@ -523,4 +538,4 @@ Konfigurasi `gamemode`:
 npm test
 ```
 
-Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, lari zigzag + makan saat darah rendah), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, tambang langsung blok dalam jangkauan (tanpa antre pathfinding), shield PvP (prediksi ayunan lawan), container, dan storage. Tes tidak memerlukan server Minecraft.
+Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, lari zigzag + makan saat darah rendah), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, tambang langsung blok dalam jangkauan (tanpa antre pathfinding), critical hit (memukul saat jatuh), shield PvP (prediksi ayunan lawan, block tetap saat memukul), container, dan storage. Tes tidak memerlukan server Minecraft.

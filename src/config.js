@@ -99,13 +99,19 @@ const DEFAULTS = {
       retreatTickMs: 200,
       retreatFleeTimeoutMs: 15000,
       retreatZigzagDeg: 35,
-      retreatZigzagMs: 400
+      retreatZigzagMs: 400,
+      critEnabled: true,
+      critTickMs: 20,
+      critRiseTimeoutMs: 250,
+      critFallTimeoutMs: 500
     },
     shield: {
       enabled: true,
       blockRange: 4.5,
-      predictMs: 350,
-      approachWindow: 2.5
+      predictMs: 400,
+      approachWindow: 2.5,
+      refreshMs: 900,
+      face: true
     }
   },
   storage: {
