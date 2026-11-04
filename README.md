@@ -388,9 +388,22 @@ Nilai `combat.hunt` yang bisa diubah:
 | `retreatMoveTimeoutMs` | `12000` | Batas waktu berjalan ke tempat aman |
 | `retreatHealTimeoutMs` | `45000` | Batas waktu menunggu darah pulih |
 
+Nilai `combat.shield` untuk memakai shield saat PvP:
+
+| Opsi | Default | Fungsi |
+| --- | --- | --- |
+| `enabled` | `true` | Pasang shield di off-hand dan pakai untuk memblok saat PvP |
+| `blockRange` | `4.5` | Jarak (blok) lawan yang membuat shield otomatis diangkat |
+| `predictMs` | `350` | Lama shield tetap terangkat setelah melihat ayunan lawan |
+| `approachWindow` | `2.5` | Toleransi jarak ekstra untuk lawan yang bergerak mendekat |
+
 ### Retreat dan heal saat PvP
 
 Kalau darah bot turun sampai `retreatHealth` (default 10), bot berhenti menyerang, menjauh ke blok aman yang jaraknya minimal `retreatDistance` dari target, lalu makan sampai food penuh. Setelah darah mencapai `retreatResumeHealth` (default 16) bot otomatis menyerang lagi dengan senjata terbaik. Selama retreat bot tidak memukul, jadi tidak terjebak trade damage saat sekarat. Kalau tidak ada makanan di inventory, bot tetap menjaga jarak dan memberi warning.
+
+### Shield dan prediksi serangan saat PvP
+
+Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. Saat bot sendiri memukul, memanah, atau makan, shield diturunkan sebentar supaya aksinya tetap keluar, lalu diangkat lagi di tick berikutnya. Selama retreat karena darah rendah shield tetap siaga, jadi bot tidak terkena hit gratis saat menjauh. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
 
 Saat mode multi-bot, `attack <nama player>` tanpa `--bot` mengirim semua bot yang online dan idle; `attack <nama player> --bot 2` hanya bot itu. CombatManager otomatis dimatikan selama job attack agar tidak menukar senjata di tengah tarikan panah, lalu dinyalakan lagi setelah job selesai.
 
@@ -427,6 +440,22 @@ Di overworld bot mencari cave/lorong terdekat lebih dulu sebelum menggali lubang
 - `caveRadius` adalah radius pencarian cave dari posisi bot.
 - `caveMinOreDistance` menentukan kapan bot dianggap "sudah dekat ore" sehingga tidak perlu pindah ke cave.
 - Kandidat cave diurutkan dari yang terdekat; kalau tidak terjangkau bot mencoba kandidat berikutnya (maksimal 3), lalu kembali menambang seperti biasa.
+
+### Tambang cepat dan tidak meninggalkan ore
+
+Bot menghancurkan ore yang sudah dalam jangkauan tangan (≤ 4,3 blok) langsung dengan `dig` plus tool terbaik, tanpa menunggu pathfinding. Blok yang lebih jauh baru didekati sekali dengan `GoalNear`, lalu digali. Urutan target selalu mendahulukan ore di sekitar bot, jadi ore yang sudah terlihat tidak ditinggalkan untuk mencari blok lain.
+
+```json
+"gather": {
+  "digTimeoutMs": 15000,
+  "walkTimeoutMs": 8000,
+  "maxStalled": 5
+}
+```
+
+- `digTimeoutMs` batas waktu satu blok digali (turun dari 45 detik agar bot cepat pindah kalau macet).
+- `walkTimeoutMs` batas waktu berjalan ke blok yang belum terjangkau — kalau gagal, blok itu dilewati, bukan diulang terus.
+- `maxStalled` jumlah kegagalan beruntun pada blok yang sudah terjangkau sebelum job berhenti dengan alasan `unreachable`.
 
 ## Membersihkan penghalang chest
 
@@ -491,4 +520,4 @@ Konfigurasi `gamemode`:
 npm test
 ```
 
-Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, retreat + heal), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, container, dan storage. Tes tidak memerlukan server Minecraft.
+Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, retreat + heal), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, tambang langsung blok dalam jangkauan (tanpa antre pathfinding), shield PvP (prediksi ayunan lawan), container, dan storage. Tes tidak memerlukan server Minecraft.
