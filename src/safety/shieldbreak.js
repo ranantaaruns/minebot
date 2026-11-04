@@ -116,7 +116,9 @@ class ShieldBreakStrategy {
     if (weapon === 'axe') {
       // Pukulan kapak sendiri masih ditahan shield, tapi shield lawan langsung
       // cooldown 5 detik — itu justru tujuan strateginya.
-      this.punishUntil = now + this.punishMs
+      // Cooldown shield mulai saat pukulan kapak mendarat, bukan saat kita
+      // mengevaluasinya di tick berikutnya.
+      this.punishUntil = pending.at + this.punishMs
       this.blockedHits = 0
       this.blockingUntil = 0
       this.stats.breaks++
