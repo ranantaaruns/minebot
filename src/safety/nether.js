@@ -107,6 +107,24 @@ function isSafeFromLava (bot, pos) {
   return true
 }
 
+// Lava bisa mengalir masuk lewat sudut, jadi cek seluruh kotak (2r+1)^3.
+// Radius 1 sudah mencakup diagonal yang tidak tertangkap isSafeFromLava.
+function lavaNear (bot, pos, radius = 1) {
+  if (!bot?.blockAt || !pos) return false
+  const center = pos.floored ? pos.floored() : pos
+  const r = Math.max(0, Math.floor(radius))
+  for (let dx = -r; dx <= r; dx++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dz = -r; dz <= r; dz++) {
+        const block = bot.blockAt(center.offset(dx, dy, dz))
+        const name = String(block?.name || '').replace(/^minecraft:/, '')
+        if (LAVA_BLOCKS.has(name) || FIRE_BLOCKS.has(name)) return true
+      }
+    }
+  }
+  return false
+}
+
 function hasGoldArmor (bot) {
   if (!bot?.inventory?.slots) return false
   const armorSlots = [5, 6, 7, 8] // helmet, chestplate, leggings, boots
@@ -304,10 +322,21 @@ function createLavaExclusion (bot) {
   }
 }
 
+// Menambang blok yang berdekatan (termasuk diagonal) dengan lava membuat lava
+// mengalir ke lorong dan membakar bot. Penalti ini dipasang di
+// movements.exclusionAreasBreak supaya pathfinder tidak memilih blok tersebut.
+function createLavaBreakExclusion (bot) {
+  return block => {
+    if (!block?.position || !bot?.blockAt) return 0
+    return lavaNear(bot, block.position, 1) ? 1000 : 0
+  }
+}
+
 module.exports = {
   isNether,
   findNearbyPortal,
   isSafeFromLava,
+  lavaNear,
   hasGoldArmor,
   findGoldArmorInInventory,
   ensureGoldArmor,
@@ -318,5 +347,6 @@ module.exports = {
   LAVA_BLOCKS,
   FIRE_BLOCKS,
   StructureAvoidance,
-  createLavaExclusion
+  createLavaExclusion,
+  createLavaBreakExclusion
 }

@@ -4,7 +4,7 @@ const { Movements } = require('mineflayer-pathfinder')
 const Move = require('mineflayer-pathfinder/lib/move')
 const mcDataLoader = require('minecraft-data')
 const { applySurfaceExclusion } = require('./navigation/surface')
-const { isNether, createLavaExclusion } = require('./safety/nether')
+const { isNether, createLavaExclusion, createLavaBreakExclusion } = require('./safety/nether')
 const { CLIMBABLE_NAMES } = require('./navigation/ladder')
 
 function resolveScaffoldIds (bot, names) {
@@ -146,6 +146,12 @@ function applyMovements (bot, mode = 'travel', options = {}) {
     if (bot.structureAvoidance && options.avoidStructures !== false) {
       movements.exclusionAreasStep.push(bot.structureAvoidance.createStructureExclusion())
     }
+  }
+
+  // Menambang di samping lava membuat lava mengalir ke lorong dan membakar bot.
+  // Di Nether selalu berbahaya; di overworld terutama saat menggali (mode gather).
+  if (mode === 'gather' || inNether) {
+    movements.exclusionAreasBreak.push(createLavaBreakExclusion(bot))
   }
 
   if (mode === 'gather') {

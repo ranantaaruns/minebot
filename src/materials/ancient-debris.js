@@ -4,7 +4,8 @@ const Vec3 = require('vec3')
 const { goals } = require('mineflayer-pathfinder')
 const { withTimeout, sleep } = require('../util/async')
 const { countItemName, findItemName } = require('../util/inventory')
-const { isNether, isSafeFromLava, hasGoldArmor, findGoldArmorInInventory } = require('../safety/nether')
+const { isNether, isSafeFromLava, lavaNear, hasGoldArmor, findGoldArmorInInventory } = require('../safety/nether')
+const { escapeLava, isInLava } = require('../safety/lava')
 const { applyMovements } = require('../movements')
 
 async function mineAncientDebris (bot, mcData, materials, count, options = {}) {
@@ -13,7 +14,9 @@ async function mineAncientDebris (bot, mcData, materials, count, options = {}) {
     cancellation,
     timeoutPerBlockMs = 45000,
     targetDebrisY = 14,
-    mineRadius = 48
+    mineRadius = 48,
+    maxRounds = 40,
+    maxLavaTurns = 4
   } = options
 
   const before = countItemName(bot, mcData, 'ancient_debris')
@@ -74,8 +77,9 @@ async function mineAncientDebris (bot, mcData, materials, count, options = {}) {
 
   logger?.info(`Mulai menambang ancient debris: target ${count}, saat ini ${have}`)
 
-  const maxRounds = 40
   let round = 0
+  let lavaTurns = 0
+  let stopReason = null
 
   while (have < count && round++ < maxRounds) {
     cancellation?.throwIfCancelled()
@@ -83,10 +87,12 @@ async function mineAncientDebris (bot, mcData, materials, count, options = {}) {
     // Safety checks in Nether
     if (bot.health !== undefined && bot.health < 10) {
       logger?.warn(`Health rendah di Nether (${bot.health}), berhenti menambang untuk keselamatan`)
+      stopReason = 'low-health'
       break
     }
     if (bot.foodManager && !await bot.foodManager.waitUntilReady(cancellation)) {
       logger?.warn('Makanan habis di Nether, berhenti menambang')
+      stopReason = 'no-food'
       break
     }
 
@@ -107,7 +113,7 @@ async function mineAncientDebris (bot, mcData, materials, count, options = {}) {
 
     // Filter out unsafe debris (adjacent to lava or in structure danger zones)
     positions = positions.filter(pos => {
-      if (!isSafeFromLava(bot, pos)) {
+      if (!isSafeFromLava(bot, pos) || lavaNear(bot, pos, 1)) {
         logger?.debug?.(`Melewati ancient debris di ${pos}: terdeteksi lava berdekatan`)
         return false
       }
@@ -184,9 +190,19 @@ async function mineAncientDebris (bot, mcData, materials, count, options = {}) {
     const nextFeet = feetPos.plus(mineDir)
     const nextHead = nextFeet.offset(0, 1, 0)
 
-    // Check for lava in front or roof above
-    if (!isSafeFromLava(bot, nextFeet) || !isSafeFromLava(bot, nextHead)) {
-      logger?.warn('Terdeteksi lava di lorong tambang! Memutar arah lorong 90 derajat...')
+    // Lava bisa mengalir dari sudut, jadi periksa kotak 2 blok di sekitar tujuan.
+    if (lavaNear(bot, nextFeet, 2) || lavaNear(bot, nextHead, 2)) {
+      lavaTurns++
+      logger?.warn(`Terdeteksi lava di lorong tambang! Memutar arah lorong 90 derajat... (${lavaTurns}/${maxLavaTurns})`)
+      if (isInLava(bot)) {
+        const escape = await escapeLava(bot, { logger, radius: 8 })
+        if (escape.moved) logger?.info('Bot keluar dari lava, lanjut mencari arah aman')
+      }
+      if (lavaTurns >= maxLavaTurns) {
+        logger?.warn('Lava mengelilingi lorong tambang, berhenti menambang demi keselamatan')
+        stopReason = 'lava-blocked'
+        break
+      }
       mineDir = new Vec3(-mineDir.z, 0, mineDir.x)
       await sleep(300, cancellation)
       continue
@@ -216,12 +232,21 @@ async function mineAncientDebris (bot, mcData, materials, count, options = {}) {
       logger?.debug(`Gagal menggali lorong: ${err.message}`)
     }
 
+    // Jangan pernah tinggal di dalam lava: keluar dulu sebelum lanjut.
+    if (isInLava(bot)) {
+      const escape = await escapeLava(bot, { logger, radius: 8 })
+      if (escape.moved) logger?.warn('Bot sempat masuk lava, sudah dipindahkan ke tempat aman')
+    }
+    lavaTurns = 0
+
     have = countItemName(bot, mcData, 'ancient_debris')
   }
 
   have = countItemName(bot, mcData, 'ancient_debris')
   const ok = have >= count
-  return { ok, have, mined, missing: Math.max(0, count - have) }
+  const result = { ok, have, mined, missing: Math.max(0, count - have) }
+  if (!ok && stopReason) result.reason = stopReason
+  return result
 }
 
 module.exports = { mineAncientDebris }

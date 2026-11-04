@@ -234,3 +234,21 @@ test('travel movements use the configured swim liquid cost', () => {
 
   assert.equal(movements.liquidCost, 12)
 })
+
+test('gather movements menolak menambang blok yang menempel lava', () => {
+  const bot = fakeBot()
+  bot.game = { dimension: 'minecraft:the_nether' }
+  bot.blockAt = p => {
+    if (p.x === 3 && p.y === 64 && p.z === 3) return { name: 'lava' }
+    return { name: 'netherrack', boundingBox: 'block' }
+  }
+
+  const movements = applyMovements(bot, 'gather', {})
+
+  const beside = movements.exclusionAreasBreak.map(fn => fn({ position: new Vec3(2, 64, 3) }))
+  const far = movements.exclusionAreasBreak.map(fn => fn({ position: new Vec3(9, 64, 9) }))
+
+  assert.ok(movements.exclusionAreasBreak.length >= 1)
+  assert.ok(beside.includes(1000), 'blok di samping lava harus diblokir untuk digali')
+  assert.ok(far.every(penalty => penalty === 0))
+})

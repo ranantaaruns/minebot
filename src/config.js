@@ -151,6 +151,13 @@ const DEFAULTS = {
     noFoodAction: 'stop',
     pauseMovementWhileEating: true,
     preventDrowning: true,
+    lava: {
+      enabled: true,
+      checkIntervalMs: 250,
+      dangerRadius: 8,
+      escapeTimeoutMs: 2500,
+      cooldownMs: 1500
+    },
     minHealth: 6,
     pauseOnDeath: false,
     antiAfk: false,

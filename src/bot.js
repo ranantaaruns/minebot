@@ -13,6 +13,7 @@ const { FoodManager, pickFood } = require('./safety/food')
 const { CombatManager } = require('./safety/combat')
 const { StorageManager } = require('./storage/manager')
 const { isNether, StructureAvoidance, ensureGoldArmor } = require('./safety/nether')
+const { LavaGuard } = require('./safety/lava')
 const { sleep } = require('./util/async')
 
 function craftingPlugin () {
@@ -163,6 +164,9 @@ async function createBot (config, logger) {
 
   bot.combatManager = new CombatManager(bot, config, logger)
   bot.combatManager.start()
+
+  bot.lavaGuard = new LavaGuard(bot, config, logger)
+  bot.lavaGuard.start()
 
   return bot
 }
