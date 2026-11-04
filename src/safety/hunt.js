@@ -254,7 +254,9 @@ class PlayerHunter {
           if (Date.now() - lastEatAt < 500) return
           if (Number(this.bot.food) >= 20) return
           lastEatAt = Date.now()
-          eating = this._eatOnce(cancellation).finally(() => { eating = null })
+          eating = this._eatOnce(cancellation)
+            .catch(() => {})
+            .finally(() => { eating = null })
         }
       })
     } catch (err) {
