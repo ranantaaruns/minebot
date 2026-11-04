@@ -103,7 +103,10 @@ const DEFAULTS = {
       critEnabled: true,
       critTickMs: 20,
       critRiseTimeoutMs: 250,
-      critFallTimeoutMs: 500
+      critFallTimeoutMs: 500,
+      shieldBreakEnabled: true,
+      shieldBreakPunishMs: 5000,
+      shieldBreakWindowMs: 1500
     },
     shield: {
       enabled: true,

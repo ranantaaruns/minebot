@@ -3,11 +3,12 @@
 const Vec3 = require('vec3')
 const { goals } = require('mineflayer-pathfinder')
 const { sleep, withTimeout } = require('../util/async')
-const { bestWeapon } = require('./combat')
+const { bestWeapon, bestAxe } = require('./combat')
 const { applyMovements } = require('../movements')
 const { ShieldGuard } = require('./shield')
 const { fleeFrom } = require('./flee')
 const { jumpCrit, canCrit } = require('./crit')
+const { ShieldBreakStrategy } = require('./shieldbreak')
 
 const ARROW_NAMES = new Set(['arrow', 'spectral_arrow', 'tipped_arrow'])
 const BOW_SCORES = { bow: 10, crossbow: 8 }
@@ -113,6 +114,9 @@ class PlayerHunter {
       critTickMs: 20,
       critRiseTimeoutMs: 250,
       critFallTimeoutMs: 500,
+      shieldBreakEnabled: true,
+      shieldBreakPunishMs: 5000,
+      shieldBreakWindowMs: 1500,
       ...(combat.hunt || {})
     }
 
@@ -121,7 +125,14 @@ class PlayerHunter {
     this.nextApproachAt = 0
     this.noPathCount = 0
     this.retreating = false
+    this.lastWeapon = 'sword'
+    this.axeWarned = false
     this.shield = new ShieldGuard(bot, combat, logger)
+    this.shieldBreak = new ShieldBreakStrategy({
+      enabled: this.settings.shieldBreakEnabled !== false,
+      punishMs: Number(this.settings.shieldBreakPunishMs) || 5000,
+      windowMs: Number(this.settings.shieldBreakWindowMs) || 1500
+    })
   }
 
   async hunt (name, cancellation) {
@@ -150,6 +161,9 @@ class PlayerHunter {
     this.bot.on?.('entityDead', onDead)
     this.bot.on?.('path_update', onPath)
     this.noPathCount = 0
+    this.lastWeapon = 'sword'
+    this.axeWarned = false
+    this.shieldBreak.reset()
     this.nextAttackAt = 0
     this.nextShotAt = 0
     this.nextApproachAt = 0
@@ -312,17 +326,31 @@ class PlayerHunter {
   }
 
   async equipMelee () {
+    return this.equipWeapon('sword')
+  }
+
+  // Kapak hanya untuk mematahkan shield; kalau tidak ada kapak di inventory,
+  // kembali ke senjata terbaik supaya bot tidak berhenti menyerang.
+  async equipWeapon (kind = 'sword') {
     const items = this.bot.inventory?.items?.() || []
-    const best = bestWeapon(items)
-    if (!best || best.score <= 0) return false
+    let best = kind === 'axe' ? bestAxe(items) : bestWeapon(items)
+    if (kind === 'axe' && (!best || best.score <= 0)) {
+      if (!this.axeWarned) {
+        this.axeWarned = true
+        this.logger?.warn('Musuh memblok dengan shield, tapi tidak ada kapak di inventory')
+      }
+      best = bestWeapon(items)
+    }
+    if (!best || best.score <= 0) return null
+    const actual = bestAxe([best.item]) ? 'axe' : 'sword'
     const held = this.bot.heldItem
-    if (held && held.type === best.item.type) return true
+    if (held && held.type === best.item.type) return actual
     try {
       await withTimeout(this.bot.equip(best.item, 'hand'), 2000, 'Equip senjata timeout')
-      return true
+      return actual
     } catch (err) {
       this.logger?.debug(`Equip senjata gagal: ${err.message}`)
-      return false
+      return null
     }
   }
 
@@ -330,9 +358,25 @@ class PlayerHunter {
     const now = Date.now()
     if (now < this.nextAttackAt) return false
     if (distance > Number(this.settings.meleeRange) + 0.6) return false
-    if (!await this.equipMelee()) return false
+
+    // Nilai dulu pukulan sebelumnya: kalau darah lawan tidak turun berarti
+    // shield-nya menahan, jadi pukulan berikutnya pakai kapak.
+    const verdict = this.shieldBreak.afterAttack(entity, this.lastWeapon, now)
+    if (verdict === 'blocked') this.logger?.debug('Serangan ditahan shield musuh')
+    if (verdict === 'broke') {
+      this.logger?.info('Kapak mematahkan shield musuh; serang dengan pedang selama shield cooldown')
+    }
+
+    const weapon = this.shieldBreak.weapon(entity, now)
+    if (weapon === 'axe' && this.lastWeapon !== 'axe') {
+      this.logger?.info('Musuh memblok dengan shield: pakai kapak untuk mematahkannya')
+    }
+    const used = await this.equipWeapon(weapon)
+    if (!used) return false
 
     this.nextAttackAt = now + this.attackCooldownMs
+    this.shieldBreak.beforeAttack(entity, now)
+    this.lastWeapon = used
     try {
       const height = (Number(entity.height) || 1.8) * 0.8
       await this.bot.lookAt(entity.position.offset(0, height, 0), true)
@@ -423,6 +467,7 @@ class PlayerHunter {
       reason,
       hits: stats.hits,
       crits: stats.crits || 0,
+      breaks: this.shieldBreak.stats.breaks,
       shots: stats.shots,
       retreats: stats.retreats || 0,
       durationMs: Date.now() - stats.startedAt

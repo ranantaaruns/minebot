@@ -408,6 +408,9 @@ Nilai `combat.hunt` untuk critical hit:
 | `critTickMs` | `20` | Interval pemeriksaan ketinggian/kecepatan saat melompat |
 | `critRiseTimeoutMs` | `250` | Batas waktu menunggu bot terangkat |
 | `critFallTimeoutMs` | `500` | Batas waktu menunggu bot mulai jatuh |
+| `shieldBreakEnabled` | `true` | Pakai kapak kalau lawan memblok dengan shield |
+| `shieldBreakPunishMs` | `5000` | Lama shield lawan cooldown setelah kena kapak |
+| `shieldBreakWindowMs` | `1500` | Jendela pemeriksaan darah untuk menilai pukulan diblok |
 
 ### Retreat dan heal saat PvP
 
@@ -421,7 +424,17 @@ Makan berjalan **bersamaan** dengan lari: begitu food di bawah 20, bot memilih m
 
 Setiap kali memukul, bot melompat lalu menahan pukulan sampai **badannya sedang turun** (`velocity.y < 0`, tidak menyentuh tanah). Itu syarat critical hit di Minecraft, jadi damage tiap pukulan naik sekitar 50%. Bot tidak mencoba crit saat di air/lava, di tangga, atau saat sprint — di kondisi itu crit tidak sah, jadi bot memukul biasa tanpa membuang waktu. Kalau lompatan gagal (langit-langit rendah, terhalang blok) atau lawan kabur dari jangkauan, bot langsung memukul normal dalam tick yang sama, jadi tidak ada pukulan yang hilang. Jumlah crit dilaporkan di akhir job: `Target X mati (12 pukulan, 9 kritikal, 0 panah, 14.2s)`.
 
-Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. Shield **tetap terangkat walaupun bot sedang memukul** — di Java pukulan tangan utama tidak memutus block off-hand, dan inilah yang membuat block sebelumnya sering bocor. Shield hanya diturunkan untuk aksi yang benar-benar butuh tangan kanan: makan dan memanah. Supaya tidak pernah "diam-diam mati", bot mengirim ulang state block setiap `refreshMs` dan mengangkatnya lagi setiap kali menerima `entityHurt`. Bot juga menghadapkan badannya ke lawan saat mengangkat shield, karena block hanya berlaku untuk serangan dari depan. Saat lari karena darah rendah shield diturunkan dulu supaya larinya cepat, lalu otomatis aktif lagi begitu bot kembali menyerang. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
+Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. ### Strategi mematahkan shield lawan
+
+Kalau lawan memegang shield dan memblok, bot tidak membuang pukulan ke dinding: ia beralih ke **kapak**. Satu pukulan kapak mematikan shield lawan selama 5 detik (mekanik vanilla), dan begitu shield mati bot langsung kembali ke **pedang** untuk memakai jendela 5 detik itu sepenuhnya. Alurnya:
+
+1. Bot memukul dengan pedang. Kalau darah lawan **tidak turun** padahal pukulan mendarat (atau metadata lawan menunjukkan tangan aktif dengan shield), pukulan itu dianggap tertahan.
+2. Bot memasang kapak terbaik di inventory lalu memukul. Pukulan itu memang masih ditahan shield, tapi shield lawan langsung cooldown 5 detik.
+3. Selama `shieldBreakPunishMs` bot memakai pedang lagi; setelah itu, kalau lawan mengangkat shield lagi, siklus diulang dari langkah 1.
+
+Bot tidak pernah menebak: kalau data darah lawan tidak tersedia atau pukulan terakhir sudah terlalu lama (`shieldBreakWindowMs`), ia tetap memakai pedang. Kalau di inventory tidak ada kapak sama sekali, bot tetap menyerang dengan senjata terbaiknya dan mencatat peringatan sekali saja, bukan berhenti. Jumlah shield yang berhasil dipatahkan masuk ke log akhir job.
+
+Shield **tetap terangkat walaupun bot sedang memukul** — di Java pukulan tangan utama tidak memutus block off-hand, dan inilah yang membuat block sebelumnya sering bocor. Shield hanya diturunkan untuk aksi yang benar-benar butuh tangan kanan: makan dan memanah. Supaya tidak pernah "diam-diam mati", bot mengirim ulang state block setiap `refreshMs` dan mengangkatnya lagi setiap kali menerima `entityHurt`. Bot juga menghadapkan badannya ke lawan saat mengangkat shield, karena block hanya berlaku untuk serangan dari depan. Saat lari karena darah rendah shield diturunkan dulu supaya larinya cepat, lalu otomatis aktif lagi begitu bot kembali menyerang. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
 
 Saat mode multi-bot, `attack <nama player>` tanpa `--bot` mengirim semua bot yang online dan idle; `attack <nama player> --bot 2` hanya bot itu. CombatManager otomatis dimatikan selama job attack agar tidak menukar senjata di tengah tarikan panah, lalu dinyalakan lagi setelah job selesai.
 
@@ -538,4 +551,4 @@ Konfigurasi `gamemode`:
 npm test
 ```
 
-Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, lari zigzag + makan saat darah rendah), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, tambang langsung blok dalam jangkauan (tanpa antre pathfinding), critical hit (memukul saat jatuh), shield PvP (prediksi ayunan lawan, block tetap saat memukul), container, dan storage. Tes tidak memerlukan server Minecraft.
+Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, lari zigzag + makan saat darah rendah), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, tambang langsung blok dalam jangkauan (tanpa antre pathfinding), critical hit (memukul saat jatuh), shield PvP (prediksi ayunan lawan, block tetap saat memukul), strategi kapak untuk mematahkan shield lawan lalu menyerang dengan pedang, container, dan storage. Tes tidak memerlukan server Minecraft.

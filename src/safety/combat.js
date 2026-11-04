@@ -36,6 +36,18 @@ const WEAPONS = [
   { suffix: 'iron_shovel', score: 5 }
 ]
 
+// Kapak dipakai khusus untuk mematahkan shield lawan: satu pukulan kapak
+// mematikan shield selama 5 detik. Urutannya terpisah dari WEAPONS karena
+// pemilihan senjata biasa selalu memilih pedang.
+const AXES = [
+  { suffix: 'netherite_axe', score: 100 },
+  { suffix: 'diamond_axe', score: 90 },
+  { suffix: 'iron_axe', score: 80 },
+  { suffix: 'stone_axe', score: 70 },
+  { suffix: 'golden_axe', score: 60 },
+  { suffix: 'wooden_axe', score: 50 }
+]
+
 const ARMOR_MATERIALS = {
   netherite: 60,
   diamond: 50,
@@ -91,6 +103,22 @@ function bestArmor (items) {
     if (!current || info.score > current.score) {
       best.set(info.destination, { item, ...info })
     }
+  }
+  return best
+}
+
+function axeScore (name) {
+  const bare = bareName(name)
+  const axe = AXES.find(entry => bare === entry.suffix || bare.endsWith(`_${entry.suffix}`))
+  return axe?.score || 0
+}
+
+function bestAxe (items) {
+  let best = null
+  for (const item of items || []) {
+    const score = axeScore(item.name)
+    if (score <= 0) continue
+    if (!best || score > best.score) best = { item, score }
   }
   return best
 }
@@ -281,6 +309,8 @@ module.exports = {
   HOSTILE_MOBS,
   isHostile,
   weaponScore,
+  axeScore,
+  bestAxe,
   armorInfo,
   bestArmor,
   bestWeapon
