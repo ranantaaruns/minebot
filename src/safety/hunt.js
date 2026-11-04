@@ -6,6 +6,7 @@ const { sleep, withTimeout } = require('../util/async')
 const { bestWeapon } = require('./combat')
 const { applyMovements } = require('../movements')
 const { findSafeSpot, isStandable } = require('./lava')
+const { ShieldGuard } = require('./shield')
 
 const ARROW_NAMES = new Set(['arrow', 'spectral_arrow', 'tipped_arrow'])
 const BOW_SCORES = { bow: 10, crossbow: 8 }
@@ -113,6 +114,7 @@ class PlayerHunter {
     this.nextApproachAt = 0
     this.noPathCount = 0
     this.retreating = false
+    this.shield = new ShieldGuard(bot, combat, logger)
   }
 
   async hunt (name, cancellation) {
@@ -150,10 +152,13 @@ class PlayerHunter {
 
     try {
       await this._equipArmor()
+      this.shield.setTarget(initial.entity)
+      this.shield.start()
       this.logger?.info(`Mulai menyerang ${target}`)
       return await this._loop(target, stats, cancellation, deadline, () => dead)
     } finally {
       this._stopPath()
+      this.shield.stop()
       try { this.bot.removeListener?.('entityDead', onDead) } catch {}
       try { this.bot.removeListener?.('path_update', onPath) } catch {}
     }
@@ -185,6 +190,8 @@ class PlayerHunter {
       }
 
       const distance = this.bot.entity.position.distanceTo(entity.position)
+      this.shield.setTarget(entity)
+      await this.shield.update(entity, distance, { attacking: false })
 
       if (distance <= Number(this.settings.meleeRange)) {
         this._stopPath()
@@ -224,6 +231,10 @@ class PlayerHunter {
 
     this._stopPath()
     try {
+      this.shield.setTarget(entity)
+      await this.shield.update(entity, this.bot.entity.position.distanceTo(entity.position))
+      this.shield.setTarget(entity)
+      await this.shield.update(entity, this.bot.entity.position.distanceTo(entity.position))
       const spot = this._findRetreatSpot(entity)
       if (spot) {
         await this._moveTo(spot)
@@ -306,6 +317,7 @@ class PlayerHunter {
           return false
         }
         try {
+          this.shield.lower()
           await withTimeout(this.bot.equip(choice.item, 'hand'), 2000, 'Equip makanan timeout')
           await withTimeout(this.bot.consume(), 5000, 'Makan timeout')
           this.logger?.info(`Makan ${choice.item.name} saat retreat (health=${this._health()})`)
@@ -355,6 +367,7 @@ class PlayerHunter {
     if (!await this.equipMelee()) return false
 
     this.nextAttackAt = now + this.attackCooldownMs
+    this.shield.lower()
     try {
       const height = (Number(entity.height) || 1.8) * 0.8
       await this.bot.lookAt(entity.position.offset(0, height, 0), true)
@@ -376,6 +389,7 @@ class PlayerHunter {
     this.nextShotAt = now + drawMs + 150
 
     try {
+      this.shield.lower()
       if (this.bot.heldItem?.type !== bow.item.type) {
         await withTimeout(this.bot.equip(bow.item, 'hand'), 2000, 'Equip bow timeout')
       }
