@@ -52,7 +52,7 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
     protectRadius = 8,
     maxMinePerJob = 1024,
     minHealth = 6,
-    timeoutPerBlockMs = 45000,
+    timeoutPerBlockMs = null,
     preferredBlocks = [],
     allowHandMining = false,
     avoidUnderBot = false,
@@ -213,7 +213,7 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
     const wasInReach = inReach(bot, block)
     const dug = await mineBlock(bot, block, {
       logger,
-      digTimeoutMs: timeoutPerBlockMs === 45000 ? digTimeoutMs : timeoutPerBlockMs,
+      digTimeoutMs: timeoutPerBlockMs ?? digTimeoutMs,
       walkTimeoutMs
     })
 
