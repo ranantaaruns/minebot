@@ -49,6 +49,11 @@ class LadderNavigator {
 
   destroy () {
     this.bot.removeListener('physicsTick', this._onPhysicsTick)
+    this.climbing = false
+    this.busy = false
+    this.active = false
+    this._setControl('forward', false)
+    this._setControl('jump', false)
   }
 
   getClimbableAt (pos) {
@@ -140,30 +145,44 @@ class LadderNavigator {
     }
   }
 
+  _setControl (name, value) {
+    try {
+      this.bot.setControlState(name, value)
+    } catch {}
+  }
+
+  // Hanya melepas kontrol bila navigator ini yang sedang memanjat, supaya tidak
+  // menimpa kontrol yang dipasang pathfinder saat bot berjalan di tanah.
+  _releaseControls () {
+    if (!this.climbing) return
+    this.climbing = false
+    this.busy = false
+    this.active = false
+    this._setControl('forward', false)
+    this._setControl('jump', false)
+  }
+
   _tick () {
     if (!this.bot?.entity || !this.bot.entity.position) return
 
     const ladder = this.getCurrentLadder()
     if (!ladder) {
-      if (this.climbing) {
-        this.climbing = false
-        this.busy = false
-      }
+      this._releaseControls()
       return
     }
 
     const target = this._resolveTarget()
-    if (!target) return
+    if (!target) {
+      this._releaseControls()
+      return
+    }
 
     const botY = this.bot.entity.position.y
     const targetY = target.y
     const diffY = targetY - botY
 
     if (this.bot.entity.onGround && diffY <= 0.3) {
-      if (this.climbing) {
-        this.climbing = false
-        this.busy = false
-      }
+      this._releaseControls()
       return
     }
 
@@ -171,6 +190,7 @@ class LadderNavigator {
       // Climbing UP
       this.climbing = true
       this.busy = true
+      this.active = true
 
       this._checkTrapdoorAbove(ladder).catch(() => {})
 
@@ -180,14 +200,15 @@ class LadderNavigator {
         this.bot.lookAt(lookPos, true).catch?.(() => {})
       } catch {}
 
-      this.bot.setControlState('forward', true)
-      this.bot.setControlState('jump', true)
-      this.bot.setControlState('sneak', false)
-      this.bot.setControlState('sprint', false)
+      this._setControl('forward', true)
+      this._setControl('jump', true)
+      this._setControl('sneak', false)
+      this._setControl('sprint', false)
     } else if (diffY < -0.5) {
       // Climbing DOWN
       this.climbing = true
       this.busy = true
+      this.active = true
 
       const wallVec = getWallVector(ladder)
       const lookPos = this.bot.entity.position.offset(wallVec.x * 0.5, -0.2, wallVec.z * 0.5)
@@ -195,15 +216,13 @@ class LadderNavigator {
         this.bot.lookAt(lookPos, true).catch?.(() => {})
       } catch {}
 
-      this.bot.setControlState('jump', false)
-      this.bot.setControlState('sneak', false)
-      this.bot.setControlState('forward', false)
+      this._setControl('jump', false)
+      this._setControl('sneak', false)
+      this._setControl('forward', false)
     } else {
       if (this.climbing) {
-        this.climbing = false
-        this.busy = false
-        this.bot.setControlState('jump', true)
-        this.bot.setControlState('forward', true)
+        this._setControl('jump', true)
+        this._setControl('forward', true)
       }
     }
   }

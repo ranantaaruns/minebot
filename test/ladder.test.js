@@ -57,6 +57,18 @@ function fakeBot (options = {}) {
   return bot
 }
 
+// AStar.compute() berhenti setelah tickTimeout (40 ms) dan mengembalikan 'partial'.
+// pathfinder asli memanggilnya berulang per tick; lakukan hal yang sama supaya tes
+// tidak gagal acak saat CPU sedang sibuk (semua file tes berjalan paralel).
+function computeAll (astar, maxTicks = 500) {
+  let result = astar.compute()
+  let ticks = 0
+  while (result.status === 'partial' && ticks++ < maxTicks) {
+    result = astar.compute()
+  }
+  return result
+}
+
 test('isClimbable recognizes ladder, vine, and scaffolding', () => {
   assert.equal(isClimbable({ name: 'ladder' }), true)
   assert.equal(isClimbable({ name: 'minecraft:ladder' }), true)
@@ -153,7 +165,7 @@ test('AStar pathfinding traverses a 15-block ladder shaft down and up with zero 
   const startDown = new Move(0, 64, 0, 0, 0)
   const goalDown = new goals.GoalBlock(2, 50, 1)
   const astarDown = new AStar(startDown, movements, goalDown, 5000, 40, -1)
-  const resDown = astarDown.compute()
+  const resDown = computeAll(astarDown)
   assert.equal(resDown.status, 'success')
   assert.ok(resDown.path.length >= 15)
   for (const move of resDown.path) {
@@ -164,7 +176,7 @@ test('AStar pathfinding traverses a 15-block ladder shaft down and up with zero 
   const startUp = new Move(2, 50, 1, 0, 0)
   const goalUp = new goals.GoalBlock(0, 64, 0)
   const astarUp = new AStar(startUp, movements, goalUp, 5000, 40, -1)
-  const resUp = astarUp.compute()
+  const resUp = computeAll(astarUp)
   assert.equal(resUp.status, 'success')
   assert.ok(resUp.path.length >= 15)
   for (const move of resUp.path) {
@@ -292,4 +304,73 @@ test('OwnerTracker aborts tower supply when ladder is nearby or bot is on ladder
   assert.equal(towerCalled, false, 'Tower supply should not be called when ladder is nearby')
 
   tracker.stop()
+})
+
+test('LadderNavigator melepas forward dan jump saat ladder hilang', () => {
+  const ladderBlock = Block.fromProperties('ladder', { facing: 'north' }, 0)
+  ladderBlock.position = new Vec3(0, 55, 0)
+
+  let hasLadder = true
+  const bot = fakeBot({
+    position: new Vec3(0.5, 55, 0.5),
+    onGround: false,
+    blockAt: (p) => {
+      if (hasLadder && p.x === 0 && p.y === 55 && p.z === 0) return ladderBlock
+      const air = Block.fromProperties('air', {}, 0)
+      air.position = p.clone()
+      return air
+    }
+  })
+
+  const navigator = new LadderNavigator(bot, {}, silentLogger, {
+    getTarget: () => new Vec3(0.5, 64, 0.5)
+  })
+
+  bot.emit('physicsTick')
+  assert.equal(bot.controls.get('forward'), true)
+  assert.equal(bot.controls.get('jump'), true)
+
+  hasLadder = false
+  bot.emit('physicsTick')
+
+  assert.equal(navigator.climbing, false)
+  assert.equal(navigator.busy, false)
+  assert.equal(bot.controls.get('forward'), false, 'forward harus dilepas setelah keluar dari ladder')
+  assert.equal(bot.controls.get('jump'), false, 'jump harus dilepas setelah keluar dari ladder')
+
+  navigator.destroy()
+})
+
+test('LadderNavigator melepas kontrol saat target tercapai di atas ladder', () => {
+  const ladderBlock = Block.fromProperties('ladder', { facing: 'north' }, 0)
+  ladderBlock.position = new Vec3(0, 55, 0)
+
+  const bot = fakeBot({
+    position: new Vec3(0.5, 55, 0.5),
+    onGround: false,
+    blockAt: (p) => {
+      if (p.x === 0 && p.y === 55 && p.z === 0) return ladderBlock
+      const air = Block.fromProperties('air', {}, 0)
+      air.position = p.clone()
+      return air
+    }
+  })
+
+  const navigator = new LadderNavigator(bot, {}, silentLogger, {
+    getTarget: () => new Vec3(0.5, 64, 0.5)
+  })
+
+  bot.emit('physicsTick')
+  assert.equal(bot.controls.get('forward'), true)
+
+  // Bot sudah sampai di lantai atas: target sama tinggi dan menginjak tanah
+  bot.entity.position = new Vec3(0.5, 64, 0.5)
+  bot.entity.onGround = true
+  bot.emit('physicsTick')
+
+  assert.equal(navigator.climbing, false)
+  assert.equal(bot.controls.get('forward'), false)
+  assert.equal(bot.controls.get('jump'), false)
+
+  navigator.destroy()
 })
