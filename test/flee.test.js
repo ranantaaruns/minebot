@@ -131,3 +131,33 @@ test('fleeFrom berhenti saat durasi habis walau target masih dekat', async () =>
   assert.equal(result.reachedSafe, false)
   assert.equal(bot.controls.at(-1)[0], 'clear')
 })
+
+test('fleeFrom tidak pernah sprint saat opsi sprint dimatikan (makan tidak batal)', async () => {
+  const bot = fleeBot({ food: 20 })
+  const enemy = { position: new Vec3(1, 64, 0) }
+
+  await fleeFrom(bot, enemy, { tickMs: 1, durationMs: 60, distance: 99, zigzagMs: 5, sprint: false })
+
+  assert.equal(bot.controls.some(([name, state]) => name === 'sprint' && state), false)
+  assert.ok(bot.controls.some(([name, state]) => name === 'forward' && state), 'tetap jalan')
+})
+
+test('fleeFrom menerima fungsi sprint untuk mematikan sprint sesaat (mis. saat makan)', async () => {
+  const bot = fleeBot({ food: 20 })
+  const enemy = { position: new Vec3(1, 64, 0) }
+  let eating = true
+
+  await fleeFrom(bot, enemy, {
+    tickMs: 1,
+    durationMs: 60,
+    distance: 99,
+    zigzagMs: 5,
+    sprint: () => !eating,
+    onTick: ({ ticks }) => { if (ticks >= 2) eating = false }
+  })
+
+  const sprintStates = bot.controls.filter(([name]) => name === 'sprint').map(([, state]) => state)
+  assert.ok(sprintStates.length >= 2)
+  assert.equal(sprintStates[0], false, 'saat makan tidak sprint')
+  assert.ok(sprintStates.slice(2).includes(true), 'setelah makan sprint lagi')
+})

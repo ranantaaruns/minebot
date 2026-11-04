@@ -101,6 +101,7 @@ async function fleeFrom (bot, entity, options = {}) {
     zigzagDeg = 35,
     zigzagMs = 400,
     sprintMinFood = 6,
+    sprint = true,
     stopWhen = null,
     onTick = null
   } = options
@@ -137,9 +138,13 @@ async function fleeFrom (bot, entity, options = {}) {
       const blocked = moved < 0.02
       lastPosition = { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z }
 
+      // Sprint membatalkan makan di Java, jadi pemanggil bisa mematikannya
+      // sementara (mis. saat sedang memakan makanan untuk heal).
+      const wantSprint = typeof sprint === 'function' ? Boolean(sprint()) : Boolean(sprint)
+
       try {
         bot.setControlState?.('forward', true)
-        bot.setControlState?.('sprint', Number(bot.food ?? 20) >= Number(sprintMinFood))
+        bot.setControlState?.('sprint', wantSprint && Number(bot.food ?? 20) >= Number(sprintMinFood))
         bot.setControlState?.('jump', Boolean(blocked && ticks > 1))
       } catch (err) {
         logger?.debug?.(`Gagal mengatur gerakan lari: ${err.message}`)

@@ -267,11 +267,14 @@ class PlayerHunter {
         distance: Number(this.settings.retreatDistance) || 12,
         zigzagDeg: Number(this.settings.retreatZigzagDeg) || 0,
         zigzagMs: Number(this.settings.retreatZigzagMs) || 400,
+        // Sprint membatalkan makan, jadi selama mengunyah bot berjalan saja
+        // (tetap menjauh dan tetap zigzag, hanya tidak ngebut).
+        sprint: () => !eating,
         stopWhen: () => this._health() >= resumeAt,
         onTick: () => {
           if (eating) return
           if (Date.now() - lastEatAt < 500) return
-          if (Number(this.bot.food) >= 20) return
+          if (!this._canEatNow()) return
           lastEatAt = Date.now()
           eating = this._eatOnce(cancellation)
             .catch(() => {})
@@ -292,6 +295,23 @@ class PlayerHunter {
     }
   }
 
+  // Apel emas tetap bisa dimakan walau makanan penuh, dan itu yang dipakai
+  // untuk heal saat sekarat.
+  _canEatNow () {
+    if (Number(this.bot.food) < 20) return true
+    return this._itemCount('golden_apple') + this._itemCount('enchanted_golden_apple') > 0
+  }
+
+  _itemCount (name) {
+    const wanted = String(name).toLowerCase()
+    let total = 0
+    for (const item of this.bot.inventory?.items?.() || []) {
+      if (String(item.name || '').replace(/^minecraft:/, '').toLowerCase() !== wanted) continue
+      total += Number(item.count) || 0
+    }
+    return total
+  }
+
   async _eatOnce (cancellation) {
     const food = this.bot.foodManager
     const choice = typeof food?.pickFood === 'function' ? food.pickFood() : null
@@ -300,16 +320,40 @@ class PlayerHunter {
       return false
     }
 
+    // Penyebab makan gagal saat retreat: bot terus sprint, dan sprint membatalkan
+    // makan di Java sehingga paket "selesai makan" tidak pernah datang.
+    try { this.bot.setControlState?.('sprint', false) } catch {}
+    this.shield.lower()
+    this.bot.autoEating = true
+
+    const name = choice.item.name
+    const beforeCount = this._itemCount(name)
+    const beforeHealth = this._health()
+
     try {
-      this.shield.lower()
-      await withTimeout(this.bot.equip(choice.item, 'hand'), 2000, 'Equip makanan timeout')
-      await withTimeout(this.bot.consume(), 5000, 'Makan timeout')
-      this.logger?.info(`Makan ${choice.item.name} sambil lari (health=${this._health()})`)
-      return true
-    } catch (err) {
-      if (err?.cancelled) throw err
-      this.logger?.debug(`Gagal makan saat retreat: ${err.message}`)
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        cancellation?.throwIfCancelled?.()
+        try {
+          await withTimeout(this.bot.equip(choice.item, 'hand'), 2000, 'Equip makanan timeout')
+          await withTimeout(this.bot.consume(), 6000, 'Makan timeout')
+          this.logger?.info(`Makan ${name} sambil lari (health=${this._health()})`)
+          return true
+        } catch (err) {
+          if (err?.cancelled) throw err
+          // Kadang makanannya benar-benar termakan walau konfirmasi server telat.
+          const eaten = this._itemCount(name) < beforeCount || this._health() > beforeHealth
+          if (eaten) {
+            this.logger?.info(`Makan ${name} sambil lari (health=${this._health()})`)
+            return true
+          }
+          this.logger?.debug(`Gagal makan saat retreat (${attempt}/2): ${err.message}`)
+          try { this.bot.deactivateItem?.() } catch {}
+          await sleep(120, cancellation)
+        }
+      }
       return false
+    } finally {
+      this.bot.autoEating = false
     }
   }
 

@@ -50,6 +50,8 @@ function retreatBot ({ health = 8, food = 12, position = new Vec3(0, 64, 0) } = 
   bot.consumes = 0
   bot.equips = []
   bot.controls = []
+  bot.sprintWhileEating = []
+  bot.consuming = false
   bot.headings = []
   bot.direction = { x: -1, z: 0 }
   bot.blockAt = pos => {
@@ -62,8 +64,10 @@ function retreatBot ({ health = 8, food = 12, position = new Vec3(0, 64, 0) } = 
   }
   bot.consume = async function () {
     this.consumes++
+    this.consuming = true
     // makan butuh waktu: bot harus tetap lari selama proses ini
     await new Promise(resolve => setTimeout(resolve, 25))
+    this.consuming = false
     this.food = 20
     // makan memicu regen: setelah makan, darah pulih sampai ambang lanjut
     this.health = 16
@@ -81,6 +85,7 @@ function retreatBot ({ health = 8, food = 12, position = new Vec3(0, 64, 0) } = 
   bot.clearControlStates = function () { this.controls.push(['clear', true]) }
   bot.setControlState = function (name, state) {
     this.controls.push([name, state])
+    if (name === 'sprint' && this.consuming) this.sprintWhileEating.push(state)
     if (name === 'forward' && state) {
       this.entity.position = new Vec3(
         this.entity.position.x + this.direction.x * 0.3,
@@ -216,4 +221,62 @@ test('retreat bisa dimatikan lewat config', async () => {
   assert.equal(result.retreats, 0)
   assert.equal(forwardTicks(bot), 0)
   assert.equal(bot.pathfinder.gotoCalls, 0)
+})
+
+test('bot berhenti sprint selama makan (sprint membatalkan makan di Java)', async () => {
+  const bot = retreatBot({ health: 8 })
+  withTarget(bot)
+
+  const hunter = new PlayerHunter(bot, huntConfig({ retreatFleeTimeoutMs: 200 }), silentLogger)
+  await hunter.hunt('Enemy')
+
+  assert.equal(bot.consumes, 1, 'bot makan sekali')
+  assert.ok(bot.sprintWhileEating.length > 0, 'kontrol sprint diperbarui selama makan')
+  assert.equal(bot.sprintWhileEating.every(state => state === false), true,
+    'tidak boleh sprint saat mengunyah')
+})
+
+test('makan gagal karena timeout dicoba ulang, bukan menyerah', async () => {
+  const logs = []
+  const logger = { ...silentLogger, info: m => logs.push(m), debug: m => logs.push(m) }
+  const bot = retreatBot({ health: 8 })
+  const realConsume = bot.consume
+  let calls = 0
+  bot.consume = async function () {
+    calls++
+    this.consumes++
+    if (calls === 1) throw new Error('Promise timed out.')
+    return realConsume.call(this)
+  }
+  withTarget(bot)
+
+  const hunter = new PlayerHunter(bot, huntConfig({ retreatFleeTimeoutMs: 400, timeoutMs: 800 }), logger)
+  await hunter.hunt('Enemy')
+
+  assert.equal(calls, 2, 'percobaan kedua dijalankan')
+  assert.equal(bot.health, 16, 'akhirnya sembuh')
+  assert.ok(logs.some(m => /Makan bread sambil lari/.test(m)))
+  assert.ok(logs.some(m => /Gagal makan saat retreat \(1\/2\)/.test(m)))
+})
+
+test('makan dianggap berhasil kalau jumlah makanan berkurang walau konfirmasi timeout', async () => {
+  const logs = []
+  const logger = { ...silentLogger, info: m => logs.push(m), debug: m => logs.push(m) }
+  const bot = retreatBot({ health: 8 })
+  const bread = { type: 2, name: 'bread', count: 4 }
+  bot.inventory.items = () => [SWORD, bread]
+  bot.consume = async function () {
+    this.consumes++
+    bread.count--
+    throw new Error('Promise timed out.')
+  }
+  withTarget(bot)
+
+  const hunter = new PlayerHunter(bot, huntConfig({ retreatFleeTimeoutMs: 200, timeoutMs: 500 }), logger)
+  await hunter.hunt('Enemy')
+
+  assert.ok(logs.some(m => /Makan bread sambil lari/.test(m)), 'tetap dianggap berhasil')
+  assert.equal(logs.some(m => /Gagal makan saat retreat/.test(m)), false,
+    'tidak dicoba ulang karena makanannya sudah berkurang')
+  assert.ok(bread.count <= 3, 'makanan benar-benar termakan')
 })
