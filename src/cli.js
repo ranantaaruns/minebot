@@ -19,14 +19,17 @@ Perintah yang tersedia:
   status                        Status bot, auth, job, dan posisi
   pos                           Koordinat bot saat ini
   inv [filter]                  Isi inventory (opsional filter nama)
-  materials <file> [--dry]      Hitung kebutuhan material dari blueprint
+  materials <file> [opsi]       Hitung kebutuhan material dari blueprint
   build <file> [opsi]           Bangun struktur
       --at <x> <y> <z>          Titik awal build (default: posisi bot)
-      --creative                Gunakan creative mode (lewatkan pencarian material)
+      --creative                Gunakan creative mode (lewati pencarian material)
       --survival                Paksa mode survival
       --dry-run                 Hanya tampilkan rencana material
       --no-gather               Jangan menambang/crafting, pakai inventory/chest
       --force                   Tetap build walau material kurang
+      --rotate <90|180|270>     Putar blueprint searah jarum jam
+      --mirror <x|z>            Cerminkan blueprint pada sumbu x atau z
+      --bot <id|nama>           Pilih bot tertentu (mode multi-bot)
   gamemode [mode]               Lihat atau ubah gamemode bot (survival/creative/dll)
   gather <item> [count]         Kumpulkan material (contoh: gather ancient_debris 4)
   come [x y z]                  Datang ke owner (atau koordinat tertentu)
@@ -207,24 +210,32 @@ class Cli {
         if (!this.session.auth) throw new Error('Bot belum terhubung')
         await this.session.auth.retry()
         return
-      case 'pause':
-        if (this.session.builder) {
-          this.session.builder.pause()
-          this.logger.info('Build dijeda')
-        } else {
+      case 'pause': {
+        const sessions = this.swarm ? this.swarm.getConnectedBots() : [this.session]
+        const running = sessions.filter(s => s.builder)
+        if (running.length === 0) {
           this.logger.warn('Tidak ada build yang berjalan')
+          return
         }
+        for (const s of running) s.builder.pause()
+        this.logger.info(`Build dijeda (${running.length} bot)`)
         return
-      case 'resume':
-        if (this.session.builder) {
-          this.session.builder.resume()
-          const foodResumed = this.session.bot?.foodManager?.manualResume?.()
-          if (foodResumed === false) this.logger.warn('Masih menunggu makanan; build bisa tertunda')
-          this.logger.info('Build dilanjutkan')
-        } else {
+      }
+      case 'resume': {
+        const sessions = this.swarm ? this.swarm.getConnectedBots() : [this.session]
+        const running = sessions.filter(s => s.builder)
+        if (running.length === 0) {
           this.logger.warn('Tidak ada build yang berjalan')
+          return
         }
+        for (const s of running) {
+          s.builder.resume()
+          const foodResumed = s.bot?.foodManager?.manualResume?.()
+          if (foodResumed === false) this.logger.warn(`Masih menunggu makanan di ${s.username || s.id}`)
+        }
+        this.logger.info(`Build dilanjutkan (${running.length} bot)`)
         return
+      }
       case 'stop':
         return this.handleStop()
       default:
@@ -232,12 +243,33 @@ class Cli {
     }
   }
 
-  getBot (requireSpawn = true) {
-    const session = this.swarm ? (this.swarm.getPrimary() || this.session) : this.session
+  getSession (selector = null) {
+    if (!this.swarm) {
+      if (selector) throw new Error('--bot hanya berlaku saat menjalankan lebih dari satu bot')
+      return this.session
+    }
+    if (!selector) return this.swarm.getPrimary() || this.session
+
+    const sessions = this.swarm.getAllSessions()
+    const wanted = String(selector).toLowerCase()
+    const found = sessions.find(s => String(s.id) === String(selector)) ||
+      sessions.find(s => String(s.username || '').toLowerCase() === wanted)
+    if (!found) {
+      const list = sessions.map(s => `${s.id}=${s.username}`).join(', ')
+      throw new Error(`Bot "${selector}" tidak ditemukan. Pilihan: ${list}`)
+    }
+    return found
+  }
+
+  getBotFor (session, requireSpawn = true) {
     const bot = session?.bot
     if (!bot) throw new Error('Bot belum terhubung ke server')
     if (requireSpawn && !bot.entity) throw new Error('Bot belum spawn / belum login')
     return bot
+  }
+
+  getBot (requireSpawn = true) {
+    return this.getBotFor(this.getSession(), requireSpawn)
   }
 
   getMcData (bot) {
@@ -345,11 +377,13 @@ class Cli {
     }
   }
 
-  async _loadAndPlan (file, bot) {
+  async _loadAndPlan (file, bot, options = {}) {
     const resolved = resolveBlueprintPath(file)
     const blueprint = await loadBlueprint(resolved, {
       maxVolume: this.config.build.maxVolume,
-      version: bot?.version || this.config.server.version || null
+      version: bot?.version || this.config.server.version || null,
+      rotate: options.rotate || 0,
+      mirror: options.mirror || null
     })
     const mcData = this.getMcData(bot)
     const requirements = computeRequirements(blueprint, mcData)
@@ -385,14 +419,14 @@ class Cli {
   }
 
   async handleMaterials (args) {
-    const file = args.find(arg => !arg.startsWith('--'))
-    if (!file) throw new Error('Gunakan: materials <file>')
-    const bot = this.session.bot
-    const { blueprint, requirements, mcData } = await this._loadAndPlan(file, bot)
+    const options = this._parseBuildOptions(args, 'materials')
+    const session = this.getSession(options.bot)
+    const bot = session?.bot || null
+    const { blueprint, requirements, mcData } = await this._loadAndPlan(options.file, bot, options)
     this._printPlan(blueprint, requirements, bot, mcData)
   }
 
-  _parseBuildOptions (args) {
+  _parseBuildOptions (args, command = 'build') {
     const options = {
       file: null,
       at: null,
@@ -400,7 +434,10 @@ class Cli {
       noGather: false,
       force: false,
       creative: false,
-      survival: false
+      survival: false,
+      rotate: 0,
+      mirror: null,
+      bot: null
     }
     for (let i = 0; i < args.length; i++) {
       const arg = args[i]
@@ -410,6 +447,19 @@ class Cli {
         const z = Number(args[++i])
         if (![x, y, z].every(Number.isFinite)) throw new Error('--at butuh tiga angka: x y z')
         options.at = new Vec3(x, y, z)
+      } else if (arg === '--rotate') {
+        const deg = Number(args[++i])
+        if (![0, 90, 180, 270, 360].includes(deg)) {
+          throw new Error('--rotate harus kelipatan 90 (0, 90, 180, 270, 360)')
+        }
+        options.rotate = deg % 360
+      } else if (arg === '--mirror') {
+        const axis = String(args[++i] || '').toLowerCase()
+        if (axis !== 'x' && axis !== 'z') throw new Error('--mirror harus x atau z')
+        options.mirror = axis
+      } else if (arg === '--bot') {
+        options.bot = args[++i] || null
+        if (!options.bot) throw new Error('--bot butuh id atau nama bot')
       } else if (arg === '--dry-run' || arg === '--dry') {
         options.dryRun = true
       } else if (arg === '--no-gather') {
@@ -424,16 +474,16 @@ class Cli {
         options.file = arg
       }
     }
-    if (!options.file) throw new Error('Gunakan: build <file> [--at x y z]')
+    if (!options.file) throw new Error(`Gunakan: ${command} <file> [opsi]`)
     return options
   }
 
-  _originFor (buildOptions, bot) {
+  _originFor (buildOptions, bot, session = this.getSession()) {
     if (buildOptions.at) return buildOptions.at.clone()
 
     const anchor = this.config.build.anchor
     if (anchor === 'player') {
-      const owner = this.session.owner?.getOwnerEntity()
+      const owner = session?.owner?.getOwnerEntity()
       if (owner) return owner.position.floored()
     }
     if (anchor === 'origin' && bot.spawnPoint) return bot.spawnPoint.floored()
@@ -465,32 +515,37 @@ class Cli {
 
   async handleBuild (args) {
     const options = this._parseBuildOptions(args)
-    const bot = this.getBot()
-    let { blueprint, requirements, mcData } = await this._loadAndPlan(options.file, bot)
+    const session = this.getSession(options.bot)
+    const bot = this.getBotFor(session)
+    let { blueprint, requirements, mcData } = await this._loadAndPlan(options.file, bot, options)
 
     this._printPlan(blueprint, requirements, bot, mcData)
 
     if (options.dryRun) return
 
-    if (this.session.jobs.busy) {
-      throw new Error(`Masih ada job: ${this.session.jobs.name}. Jalankan "stop" dulu.`)
+    if (session.jobs.busy) {
+      throw new Error(`Masih ada job: ${session.jobs.name}. Jalankan "stop" dulu.`)
     }
 
-    if (!this.session.auth?.authenticated) {
+    if (!session.auth?.authenticated) {
       this.logger.warn('Bot belum terkonfirmasi login. Build tetap dicoba, tapi server bisa menolak.')
     }
 
-    const origin = this._originFor(options, bot)
+    if (this.swarm && this.swarm.getAllSessions().length > 1) {
+      this.logger.info(`Build dijalankan oleh bot ${session.username || session.id}`)
+    }
+
+    const origin = this._originFor(options, bot, session)
     const materials = new MaterialManager(bot, this.config, this.logger, { origin })
 
-    await this.session.jobs.run('build', async (cancellation, job) => {
-      this.session.materials = materials
-      this.session.owner?.pause()
+    await session.jobs.run('build', async (cancellation, job) => {
+      session.materials = materials
+      session.owner?.pause()
       bot.storageManager?.clearKeep()
       bot.storageManager?.addKeep([...requirements.items.keys()])
 
       let enteredCreative = false
-      const gm = this.session.gamemode
+      const gm = session.gamemode
       const preferCreative = options.creative ? true : (options.survival ? false : (this.config.gamemode?.buildMode === 'creative'))
 
       if (preferCreative && gm) {
@@ -514,7 +569,7 @@ class Cli {
         if (!isCreative) {
           const resolution = await materials.resolveBiomeMaterials(requirements, {
             origin,
-            dialog: this._getDialog(bot),
+            dialog: this._getDialog(session, bot),
             cancellation
           })
           requirements = resolution.requirements
@@ -547,7 +602,7 @@ class Cli {
         }
 
         cancellation.throwIfCancelled()
-        this.session.builder = new Builder(bot, blueprint, {
+        session.builder = new Builder(bot, blueprint, {
           config: this.config,
           logger: this.logger,
           origin,
@@ -558,14 +613,14 @@ class Cli {
           onProgress: progress => job.progress = progress
         })
 
-        const result = await this.session.builder.build()
+        const result = await session.builder.build()
         this.logger.info(
           `Ringkasan build: ${result.done} dipasang, ${result.skipped} sudah ada, ` +
           `${result.failed} gagal, ${result.remaining} tersisa`
         )
         return result
       } finally {
-        this.session.builder = null
+        session.builder = null
         bot.storageManager?.clearKeep()
         if (enteredCreative && this.config.gamemode?.restoreAfterBuild !== false && gm) {
           try {
@@ -574,7 +629,7 @@ class Cli {
             this.logger.debug(`Gagal mengembalikan gamemode: ${err.message}`)
           }
         }
-        this.session.owner?.resume()
+        session.owner?.resume()
       }
     })
   }
@@ -671,13 +726,13 @@ class Cli {
     bot.chat(text)
   }
 
-  _getDialog (bot) {
-    if (this.session.dialog) return this.session.dialog
+  _getDialog (session, bot) {
+    if (session.dialog) return session.dialog
     if (this.config.build?.biomeMaterials?.enabled === false) return null
     if (this.config.build?.biomeMaterials?.askOwner === false) return null
     const dialog = new OwnerDialog(bot, this.config, this.logger)
     dialog.start()
-    this.session.dialog = dialog
+    session.dialog = dialog
     return dialog
   }
 

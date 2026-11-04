@@ -5,6 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const Vec3 = require('vec3')
 const { Schematic } = require('prismarine-schematic')
 const { Cli, resolveBlueprintPath } = require('../src/cli')
 
@@ -101,4 +102,84 @@ test('Cli._parseBuildOptions recognizes --creative and --survival flags', () => 
   const optsSurvival = cli._parseBuildOptions(['house.schem', '--survival'])
   assert.equal(optsSurvival.creative, false)
   assert.equal(optsSurvival.survival, true)
+})
+
+function fakeSession (id, username, overrides = {}) {
+  return {
+    id,
+    username,
+    bot: { entity: {}, version: '1.21.4' },
+    jobs: { busy: false, name: null },
+    auth: { authenticated: true },
+    owner: null,
+    gamemode: null,
+    builder: null,
+    dialog: null,
+    spawned: true,
+    ...overrides
+  }
+}
+
+function fakeSwarm (sessions) {
+  return {
+    isSwarm: true,
+    sessions,
+    getPrimary () {
+      return sessions.find(s => s.spawned) || sessions[0] || null
+    },
+    getAllSessions () {
+      return sessions
+    },
+    getConnectedBots () {
+      return sessions.filter(s => s.bot && s.spawned)
+    }
+  }
+}
+
+test('Cli memakai session primary terbaru, bukan snapshot saat konstruksi', () => {
+  // Saat CLI dibuat belum ada bot yang spawn, jadi getPrimary() mengembalikan session pertama.
+  const first = fakeSession(1, 'BotA', { bot: null, spawned: false })
+  const second = fakeSession(2, 'BotB', { spawned: false })
+  const swarm = fakeSwarm([first, second])
+  const cli = new Cli(swarm, { server: {}, build: {} }, silentLogger)
+
+  assert.equal(cli.session, first)
+
+  // BotB berhasil connect belakangan: snapshot di cli.session sudah basi.
+  second.spawned = true
+  assert.equal(cli.getSession(), second)
+  assert.equal(cli.getBot(), second.bot)
+})
+
+test('Cli.getSession mendukung pemilihan --bot lewat id atau username', () => {
+  const first = fakeSession(1, 'BotA')
+  const second = fakeSession(2, 'BotB', { bot: null })
+  const cli = new Cli(fakeSwarm([first, second]), { server: {}, build: {} }, silentLogger)
+
+  assert.equal(cli.getSession('2'), second)
+  assert.equal(cli.getSession('botb'), second)
+  assert.throws(() => cli.getSession('tidak-ada'), /tidak ditemukan/)
+})
+
+test('Cli._originFor membaca owner dari session yang dipilih', () => {
+  const first = fakeSession(1, 'BotA')
+  const second = fakeSession(2, 'BotB', {
+    owner: { getOwnerEntity: () => ({ position: { floored: () => new Vec3(1, 2, 3) } }) }
+  })
+  const cli = new Cli(fakeSwarm([first, second]), { server: {}, build: { anchor: 'player' } }, silentLogger)
+
+  const origin = cli._originFor({}, second.bot, second)
+  assert.deepEqual(origin, new Vec3(1, 2, 3))
+})
+
+test('Cli._parseBuildOptions membaca --rotate, --mirror, dan --bot', () => {
+  const cli = new Cli({}, { server: {}, build: {} }, silentLogger)
+  const opts = cli._parseBuildOptions(['rumah.schem', '--rotate', '90', '--mirror', 'x', '--bot', '2'])
+
+  assert.equal(opts.file, 'rumah.schem')
+  assert.equal(opts.rotate, 90)
+  assert.equal(opts.mirror, 'x')
+  assert.equal(opts.bot, '2')
+  assert.throws(() => cli._parseBuildOptions(['rumah.schem', '--rotate', '45']), /kelipatan 90/)
+  assert.throws(() => cli._parseBuildOptions(['rumah.schem', '--mirror', 'y']), /x atau z/)
 })
