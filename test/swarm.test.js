@@ -284,3 +284,53 @@ test('Cli displays multi-bot status and delegates commands to swarm', async () =
     console.log = originalLog
   }
 })
+
+test('SwarmManager attack mengirim semua bot idle untuk menyerang target', async () => {
+  const baseConfig = {
+    server: { host: 'localhost' },
+    owner: { username: 'Owner' },
+    bot: { username: 'bot' },
+    combat: { attackCooldownMs: 20, hunt: { tickMs: 1, timeoutMs: 500 } }
+  }
+  const swarm = new SwarmManager([{ username: 'b1' }, { username: 'b2' }], baseConfig, silentLogger)
+
+  const target = {
+    id: 42,
+    username: 'Target',
+    name: 'player',
+    type: 'player',
+    position: new Vec3(2, 64, 0),
+    velocity: new Vec3(0, 0, 0),
+    height: 1.8,
+    health: 20
+  }
+
+  for (const s of swarm.sessions) {
+    s.spawned = true
+    s.connected = true
+    s.bot = {
+      username: s.username,
+      entity: { position: new Vec3(0, 64, 0) },
+      players: { Target: { username: 'Target', entity: target } },
+      entities: { 42: target },
+      inventory: { items: () => [{ type: 1, name: 'netherite_sword', count: 1 }] },
+      heldItem: null,
+      async equip () {},
+      async lookAt () {},
+      attack () { target.health = 0 },
+      pathfinder: { setGoal () {}, stop () {} },
+      combatManager: { enabled: true, async maybeUpgradeArmor () {} }
+    }
+    s.owner = { pause () {}, resume () {} }
+    s.jobs = new (require('../src/jobs').JobManager)(silentLogger)
+  }
+  // Bot kedua sedang sibuk: tidak boleh ikut menyerang.
+  swarm.sessions[1].jobs = { busy: true, name: 'gather' }
+
+  const result = await swarm.attack('Target')
+
+  assert.equal(result.ok, true)
+  assert.equal(result.killed, 1)
+  assert.equal(result.total, 1)
+  assert.match(result.details[0], /^b1: killed/)
+})

@@ -85,7 +85,14 @@ const DEFAULTS = {
     detectRadius: 8,
     maxPursueDistance: 6,
     attackCooldownMs: 650,
-    defendTimeoutMs: 12000
+    defendTimeoutMs: 12000,
+    hunt: {
+      meleeRange: 3.2,
+      bowRange: 24,
+      drawMs: 1000,
+      tickMs: 250,
+      timeoutMs: 180000
+    }
   },
   storage: {
     enabled: true,
@@ -276,6 +283,16 @@ function validate (config) {
         errors.push(`combat.${key} harus lebih dari 0`)
       }
     }
+    if (!isObject(config.combat.hunt)) {
+      errors.push('combat.hunt harus berupa object')
+    } else {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'tickMs', 'timeoutMs']) {
+        const value = Number(config.combat.hunt[key])
+        if (!Number.isFinite(value) || value <= 0) {
+          errors.push(`combat.hunt.${key} harus lebih dari 0`)
+        }
+      }
+    }
   }
   if (!isObject(config.storage)) {
     errors.push('storage harus berupa object')
@@ -431,6 +448,11 @@ function loadConfig (configPath) {
   if (isObject(config.combat)) {
     for (const key of ['attackRange', 'detectRadius', 'maxPursueDistance', 'attackCooldownMs', 'defendTimeoutMs']) {
       config.combat[key] = Number(config.combat[key])
+    }
+    if (isObject(config.combat.hunt)) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'tickMs', 'timeoutMs']) {
+        config.combat.hunt[key] = Number(config.combat.hunt[key])
+      }
     }
   }
   if (isObject(config.storage)) {

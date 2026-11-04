@@ -13,6 +13,7 @@ const HOSTILE_MOBS = new Set([
 
 const WEAPONS = [
   { suffix: 'netherite_sword', score: 100 },
+  { suffix: 'mace', score: 95 },
   { suffix: 'diamond_sword', score: 90 },
   { suffix: 'iron_sword', score: 80 },
   { suffix: 'stone_sword', score: 70 },

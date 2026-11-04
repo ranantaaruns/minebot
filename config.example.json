@@ -106,7 +106,14 @@
     "detectRadius": 8,
     "maxPursueDistance": 6,
     "attackCooldownMs": 650,
-    "defendTimeoutMs": 12000
+    "defendTimeoutMs": 12000,
+    "hunt": {
+      "meleeRange": 3.2,
+      "bowRange": 24,
+      "drawMs": 1000,
+      "tickMs": 250,
+      "timeoutMs": 180000
+    }
   },
   "storage": {
     "enabled": true,

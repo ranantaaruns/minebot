@@ -40,6 +40,8 @@ test('isHostile only accepts hostile mob names', () => {
 
 test('weapon and armor scoring prefer stronger gear', () => {
   assert.ok(weaponScore('diamond_sword') > weaponScore('stone_sword'))
+  assert.ok(weaponScore('mace') > weaponScore('diamond_sword'))
+  assert.ok(weaponScore('netherite_sword') > weaponScore('mace'))
   assert.ok(weaponScore('stone_sword') > weaponScore('diamond_axe'))
   assert.equal(weaponScore('apple'), 0)
 

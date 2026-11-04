@@ -3,6 +3,7 @@
 const { BotSession } = require('./session')
 const { deliverItemsToOwner } = require('./deliver')
 const { MaterialManager } = require('../materials/resolve')
+const { startHuntJob } = require('../safety/hunt')
 const { applyMovements } = require('../movements')
 const { sleep } = require('../util/async')
 
@@ -145,6 +146,33 @@ class SwarmManager {
       delivered: totalDelivered,
       details: summary
     }
+  }
+
+  async attack (username) {
+    const target = String(username || '').trim()
+    if (!target) throw new Error('Gunakan: attack <nama player>')
+
+    const activeBots = this.getConnectedBots().filter(s => !s.jobs.busy)
+    if (activeBots.length === 0) {
+      throw new Error('Tidak ada bot yang online dan idle untuk menyerang')
+    }
+
+    this.logger.info(`[Swarm] ${activeBots.length} bot menyerang ${target}`)
+    const results = await Promise.allSettled(activeBots.map(session => {
+      return startHuntJob(session, target, { config: session.config || this.baseConfig, logger: session.logger })
+    }))
+
+    const details = results.map((result, i) => {
+      const name = activeBots[i].username
+      if (result.status === 'fulfilled') return `${name}: ${result.value?.reason || 'selesai'}`
+      return `${name}: ${result.reason?.message || 'gagal'}`
+    })
+    const killed = results.filter(result => result.status === 'fulfilled' && result.value?.killed).length
+
+    if (killed > 0) this.logger.info(`[Swarm] ${target} mati (${details.join(', ')})`)
+    else this.logger.warn(`[Swarm] Gagal membunuh ${target} (${details.join(', ')})`)
+
+    return { ok: killed > 0, killed, total: activeBots.length, details }
   }
 
   async come (coords = null) {

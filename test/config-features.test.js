@@ -96,3 +96,33 @@ test('loadConfig rejects invalid feature settings', () => {
 
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('loadConfig menyediakan dan memvalidasi opsi combat.hunt', () => {
+  const defaults = writeConfig(baseConfig())
+  const config = loadConfig(defaults.file)
+  assert.equal(config.combat.hunt.meleeRange, 3.2)
+  assert.equal(config.combat.hunt.bowRange, 24)
+  assert.equal(config.combat.hunt.drawMs, 1000)
+  assert.equal(config.combat.hunt.timeoutMs, 180000)
+  fs.rmSync(defaults.dir, { recursive: true, force: true })
+
+  const custom = writeConfig(baseConfig({
+    combat: { hunt: { bowRange: '32', drawMs: '800', tickMs: '100', meleeRange: '4', timeoutMs: '60000' } }
+  }))
+  const parsed = loadConfig(custom.file)
+  assert.equal(parsed.combat.hunt.bowRange, 32)
+  assert.equal(parsed.combat.hunt.drawMs, 800)
+  assert.equal(parsed.combat.hunt.tickMs, 100)
+  assert.equal(parsed.combat.hunt.meleeRange, 4)
+  assert.equal(parsed.combat.hunt.timeoutMs, 60000)
+  fs.rmSync(custom.dir, { recursive: true, force: true })
+
+  const invalid = writeConfig(baseConfig({ combat: { hunt: { bowRange: 0, drawMs: 'x' } } }))
+  assert.throws(() => loadConfig(invalid.file), err => {
+    assert.equal(err.code, 'CONFIG_INVALID')
+    assert.match(err.message, /combat\.hunt\.bowRange/)
+    assert.match(err.message, /combat\.hunt\.drawMs/)
+    return true
+  })
+  fs.rmSync(invalid.dir, { recursive: true, force: true })
+})

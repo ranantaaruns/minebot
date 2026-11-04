@@ -69,6 +69,7 @@ mcbot>
 | `build <file> [opsi]` | Bangun struktur |
 | `gamemode [mode]` | Lihat atau ubah gamemode bot (survival/creative/dll) |
 | `gather <item> <count>` | Kumpulkan material |
+| `attack <nama player> [--bot <id\|nama>]` | Cari dan bunuh player |
 | `come [x y z]` | Datang ke owner / koordinat |
 | `follow` | Aktifkan auto-follow |
 | `say <teks>` | Kirim chat |
@@ -317,7 +318,7 @@ Pilihan jawaban:
 
 ## Combat hostile dan armor otomatis
 
-Bot hanya menyerang mob hostile yang masuk jangkauan. Bot tidak mengejar jauh dan tidak menyerang player. Saat ada armor yang lebih baik di inventory, bot memakainya otomatis.
+Bot hanya menyerang mob hostile yang masuk jangkauan. Bot tidak mengejar jauh dan tidak pernah menyerang player sendiri — player hanya diserang lewat perintah manual `attack <nama player>` (lihat bagian berikutnya). Saat ada armor yang lebih baik di inventory, bot memakainya otomatis.
 
 ```json
 "combat": {
@@ -327,9 +328,38 @@ Bot hanya menyerang mob hostile yang masuk jangkauan. Bot tidak mengejar jauh da
   "detectRadius": 8,
   "maxPursueDistance": 6,
   "attackCooldownMs": 650,
-  "defendTimeoutMs": 12000
+  "defendTimeoutMs": 12000,
+  "hunt": {
+    "meleeRange": 3.2,
+    "bowRange": 24,
+    "drawMs": 1000,
+    "tickMs": 250,
+    "timeoutMs": 180000
+  }
 }
 ```
+
+## Menyerang player (`attack`)
+
+`attack <nama player>` adalah perintah manual: bot berhenti dari pekerjaan lain (auto-follow dijeda), mencari player tersebut, lalu membunuhnya.
+
+1. Bot memakai armor terbaik di inventory, lalu senjata dengan damage terbesar (netherite sword > mace > diamond sword > trident > axe, dst).
+2. Jarak dekat (≤ `meleeRange`): bot mendekat dengan pathfinder lalu memukul mengikuti cooldown `attackCooldownMs`.
+3. Jarak jauh (≤ `bowRange`): bot berhenti, memakai bow, membidik dengan kompensasi jatuhnya panah dan gerakan target, menarik panah selama `drawMs`, lalu melepas. Bot hanya memanah kalau punya panah; kalau panah habis bot mengejar untuk serang jarak dekat.
+4. Lebih jauh dari `bowRange`: bot mengejar target (GoalFollow). Kalau pathfinder gagal 3× (`noPath`), job berhenti dengan alasan `unreachable`.
+5. Job berhenti sendiri saat target mati, target hilang dari pandangan, `timeoutMs` habis, atau `stop` diketik.
+
+Nilai `combat.hunt` yang bisa diubah:
+
+| Opsi | Default | Fungsi |
+| --- | --- | --- |
+| `meleeRange` | `3.2` | Jarak (blok) untuk mulai memukul |
+| `bowRange` | `24` | Jarak maksimum memakai bow |
+| `drawMs` | `1000` | Lama menarik panah sebelum dilepas |
+| `tickMs` | `250` | Jeda antar keputusan menyerang |
+| `timeoutMs` | `180000` | Batas waktu satu job attack |
+
+Saat mode multi-bot, `attack <nama player>` tanpa `--bot` mengirim semua bot yang online dan idle; `attack <nama player> --bot 2` hanya bot itu. CombatManager otomatis dimatikan selama job attack agar tidak menukar senjata di tengah tarikan panah, lalu dinyalakan lagi setelah job selesai.
 
 ## Storage otomatis
 
@@ -410,4 +440,4 @@ Konfigurasi `gamemode`:
 npm test
 ```
 
-Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, container, dan storage. Tes tidak memerlukan server Minecraft.
+Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran), container, dan storage. Tes tidak memerlukan server Minecraft.

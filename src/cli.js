@@ -12,6 +12,7 @@ const { Builder } = require('./build/builder')
 const { aggregateInventory, countItemName } = require('./util/inventory')
 const { applyMovements } = require('./movements')
 const { OwnerDialog } = require('./owner-dialog')
+const { findPlayer, startHuntJob } = require('./safety/hunt')
 
 const HELP = `
 Perintah yang tersedia:
@@ -32,6 +33,7 @@ Perintah yang tersedia:
       --bot <id|nama>           Pilih bot tertentu (mode multi-bot)
   gamemode [mode]               Lihat atau ubah gamemode bot (survival/creative/dll)
   gather <item> [count]         Kumpulkan material (contoh: gather ancient_debris 4)
+  attack <nama player>          Cari dan bunuh player (bow dipakai untuk jarak jauh)
   come [x y z]                  Datang ke owner (atau koordinat tertentu)
   follow                        Aktifkan auto-follow owner
   say <teks>                    Kirim pesan ke chat server
@@ -180,6 +182,8 @@ class Cli {
         return this.handleGamemode(args)
       case 'gather':
         return this.handleGather(args)
+      case 'attack':
+        return this.handleAttack(args)
       case 'come':
         return this.handleCome(args)
       case 'follow':
@@ -685,6 +689,42 @@ class Cli {
         this.session.owner?.resume()
       }
     })
+  }
+
+  async handleAttack (args) {
+    let selector = null
+    const positional = []
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i]
+      if (arg === '--bot') {
+        selector = args[++i] || null
+        if (!selector) throw new Error('--bot butuh id atau nama bot')
+        continue
+      }
+      positional.push(arg)
+    }
+
+    const target = positional.join(' ').trim()
+    if (!target) throw new Error('Gunakan: attack <nama player>')
+
+    const session = this.getSession(selector)
+    if (selector || !this.swarm) {
+      const bot = this.getBotFor(session)
+      this._assertTargetVisible(bot, target)
+      return startHuntJob(session, target, { config: this.config, logger: this.logger })
+    }
+
+    return this.swarm.attack(target)
+  }
+
+  _assertTargetVisible (bot, target) {
+    const found = findPlayer(bot, target)
+    if (found.player || found.entity) return
+
+    const username = String(bot?.username || '').toLowerCase()
+    const names = Object.keys(bot?.players || {}).filter(name => name.toLowerCase() !== username)
+    const hint = names.length > 0 ? ` Pilihan: ${names.join(', ')}` : ' Belum ada player lain yang terlihat.'
+    throw new Error(`Player "${target}" tidak ditemukan.${hint}`)
   }
 
   async handleCome (args) {
