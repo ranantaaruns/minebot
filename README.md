@@ -1,0 +1,387 @@
+# mcbot
+
+Bot Minecraft untuk login otomatis, mengikuti owner, mengumpulkan material, dan membangun struktur dari file `.litematic` / `.schem`.
+
+Dibuat untuk server Java offline-mode (AuthMe dan sejenisnya). Bot berjalan di terminal dan dikendalikan lewat perintah teks.
+
+## Kebutuhan
+
+- Node.js 22 atau lebih baru
+- Akun Minecraft yang boleh dipakai di server tujuan
+- Server Java (tidak perlu dijalankan di komputer ini)
+
+## Instalasi
+
+```bash
+cd mcbot
+npm install
+cp config.example.json config.json
+```
+
+Edit `config.json`:
+
+```json
+{
+  "server": { "host": "play.contoh.com", "port": 25565, "version": "1.21.11" },
+  "bot": { "username": "BuilderBot", "auth": "offline" },
+  "auth": {
+    "enabled": true,
+    "password": "password-akun-bot",
+    "registerCommand": "/register {password} {password}",
+    "loginCommand": "/login {password}"
+  },
+  "physics": { "paperCollisionFix": true },
+  "owner": { "username": "NamaKamu", "autoFollow": true }
+}
+```
+
+- `server.version`: isi `"1.21.11"` untuk Paper 1.21.11. Bisa juga `null` agar dideteksi otomatis.
+- `physics.paperCollisionFix` memperbaiki bug collision Paper 1.21.11 yang membuat bot menempel di pinggir block. Biarkan `true` untuk server tersebut.
+- `owner.stuckTimeoutMs`, `owner.maxStuckRetries`, dan `owner.unstickJump` mengatur pemulihan otomatis saat follow macet.
+- `auth.password` hanya disimpan di `config.json` yang sudah masuk `.gitignore`. Jangan commit file itu.
+- `owner.username` adalah username Anda, bukan username bot.
+- Kalau server memakai format register/login lain, ubah `registerCommand` / `loginCommand`. Placeholder `{password}` akan diganti otomatis.
+- `owner.autoFollow: true` membuat bot mendekat saat owner terlihat, atau saat owner mengirim koordinat di chat/whisper.
+
+## Menjalankan
+
+```bash
+npm start
+```
+
+Saat pertama kali dijalankan tanpa `config.json`, bot membuat salinannya dari contoh lalu berhenti agar Anda bisa mengeditnya.
+
+Setelah tersambung dan login, akan muncul prompt:
+
+```
+mcbot>
+```
+
+## Perintah
+
+| Perintah | Fungsi |
+| --- | --- |
+| `help` | Daftar perintah |
+| `status` | Status koneksi, auth, job, posisi |
+| `pos` | Koordinat bot |
+| `inv [filter]` | Isi inventory |
+| `materials <file> [--dry]` | Hitung kebutuhan material |
+| `build <file> [opsi]` | Bangun struktur |
+| `gamemode [mode]` | Lihat atau ubah gamemode bot (survival/creative/dll) |
+| `gather <item> <count>` | Kumpulkan material |
+| `come [x y z]` | Datang ke owner / koordinat |
+| `follow` | Aktifkan auto-follow |
+| `say <teks>` | Kirim chat |
+| `register` | Kirim ulang command `/register` ke server |
+| `auth` | Coba login ulang |
+| `pause` / `resume` | Jeda / lanjut build |
+| `stop` | Hentikan job |
+| `quit` | Keluar |
+
+Opsi `build`:
+
+- `--at x y z` — titik awal build (default: posisi bot)
+- `--creative` — gunakan mode creative (bypass pencarian/mining material)
+- `--survival` — paksa mode survival
+- `--dry-run` — hanya tampilkan rencana material
+- `--no-gather` — jangan menambang/crafting, pakai inventory dan chest saja
+- `--force` — tetap build walau material kurang
+
+Kalau server di-reset total dan akun bot belum terdaftar lagi, jalankan:
+
+```
+mcbot> register
+```
+
+Bot akan mengirim ulang command yang ada di `auth.registerCommand`.
+
+Contoh:
+
+```
+mcbot> materials rumah.litematic
+mcbot> build rumah.litematic --at 100 64 -20
+mcbot> build rumah.litematic --no-gather
+mcbot> build menara.schem --dry-run
+```
+
+## Rencana material tanpa menjalankan bot
+
+```bash
+npm run plan -- rumah.litematic
+npm run plan -- rumah.schem --json
+```
+
+Berguna untuk mengecek jumlah blok, material, dan blok yang tidak didukung sebelum masuk server.
+
+## Cara kerja material
+
+1. Cek inventory bot.
+2. Ambil dari chest/barrel di sekitar area build (`gather.chestRadius`). Kalau ada blok di atas chest, bot menggali penghalang yang bisa digali lebih dulu.
+3. Kalau inventory hampir penuh, bot menyimpan resource ke storage terdekat. Gear, armor, makanan, bahan bakar, dan material job tidak disimpan.
+4. Kalau material tidak cocok dengan biome, bot menanyakan pilihan ke owner sebelum menambang.
+5. Craft item turunan (plank, stick, stairs, slab, door, dsb.), termasuk fallback resep langsung saat planner utama gagal.
+6. Smelt item seperti stone, smooth stone, glass, brick, dan stone bricks. Bahan bakar yang sudah ada di furnace dipakai lebih dulu.
+7. Menambang blok sumber di sekitar bot (`gather.mineRadius`) untuk material umum.
+8. Kalau masih kurang, build berhenti kecuali `--force`.
+
+Yang tidak otomatis ditambang: material langka/berbahaya seperti diamond, netherite, obsidian, sponge, dan blok yang butuh enchant/silk touch. Siapkan lewat chest atau inventory.
+
+## File blueprint
+
+Lihat [blueprints/README.md](blueprints/README.md). Letakkan file di folder `blueprints/`, lalu panggil namanya saja.
+
+## Bot macet di pinggir block (Paper 1.21.11)
+
+Paper 1.21.11 memakai hitbox server yang sedikit lebih lebar daripada hitbox client Mineflayer. Saat bot menempel tepat di pinggir block, lompatan bisa ditolak server dan bot terlihat “glued” ke block.
+
+Bot sudah menerapkan kompensasi ukuran hitbox secara otomatis bila `physics.paperCollisionFix` bernilai `true`. Nilai default:
+
+```json
+"physics": {
+  "paperCollisionFix": true,
+  "playerHalfWidth": 0.30001,
+  "playerHeight": 1.80001
+}
+```
+
+Jika Paper memperbaiki bug collision-nya dan bot justru sulit melewati celah sempit, matikan dengan `"paperCollisionFix": false`.
+
+Saat follow macet, bot akan berhenti sebentar, memberi dorongan lompat/mundur, lalu menghitung ulang rute. Atur lewat:
+
+```json
+"owner": {
+  "stuckTimeoutMs": 4000,
+  "maxStuckRetries": 2,
+  "stuckCooldownMs": 10000,
+  "unstickJump": true
+}
+```
+
+Aktifkan `"logging": { "debug": true }` untuk melihat log `path_reset`, alasan gagal, dan posisi saat pemulihan.
+
+## Tower otomatis saat follow
+
+Saat owner berada di tebing atau tempat yang lebih tinggi, bot bisa memasang tower untuk mengejar. Kalau block tower tidak cukup, bot berhenti sementara, mencari `grass_block` atau `dirt` terdekat, menambangnya, lalu menghitung ulang rute dan melanjutkan tower.
+
+```json
+"owner": {
+  "allowTower": true,
+  "towerBlocks": ["dirt", "grass_block", "cobblestone", "oak_planks", "scaffolding"],
+  "towerPlaceCost": 40,
+  "towerGather": {
+    "enabled": true,
+    "item": "dirt",
+    "preferredBlocks": ["grass_block", "dirt"],
+    "radius": 32,
+    "protectRadius": 6,
+    "reserve": 8,
+    "minGap": 2,
+    "maxPerAttempt": 32,
+    "maxAttempts": 3,
+    "cooldownMs": 30000,
+    "timeoutMs": 120000,
+    "allowHandMining": true
+  }
+}
+```
+
+- Urutan `towerBlocks` menentukan prioritas block yang dipakai untuk tower.
+- `grass_block` dan `dirt` adalah sumber utama. Tanpa enchant silk touch, `grass_block` akan menjadi `dirt` saat ditambang.
+- Bot memakai `dirt` dari inventory, chest, atau hasil tambang. Kalau shovel tidak tersedia, bot tetap menggali dengan tangan.
+- `protectRadius` mencegah bot menambang block di sekitar posisi owner.
+- Bot tidak menambang block tepat di bawah kakinya supaya tidak jatuh.
+- Kalau block tetap tidak ditemukan setelah `maxAttempts`, bot berhenti sementara selama `cooldownMs` lalu mencoba lagi.
+- Config lama tetap kompatibel. Kalau bagian `owner.allowTower` atau `owner.towerGather` belum ada, bot memakai nilai default di atas.
+
+## Berenang saat follow
+
+Bot tidak bergantung pada pathfinder untuk menyeberangi air. Saat masuk air, bot mengambil alih kontrol, terus menahan `jump` agar tidak tenggelam, lalu berenang ke arah owner. Kalau menabrak tepian, bot mencoba strafe kiri/kanan sambil tetap melompat.
+
+```json
+"owner": {
+  "swim": {
+    "enabled": true,
+    "liquidCost": 12,
+    "updateMs": 250,
+    "timeoutMs": 120000,
+    "shoreStrafeAfterMs": 2000,
+    "strafeMs": 800,
+    "approachFromShore": true,
+    "approachScanDistance": 16,
+    "approachTimeoutMs": 4000
+  }
+},
+"safety": {
+  "preventDrowning": true
+}
+```
+
+- `liquidCost` membuat pathfinder lebih memilih jalur air daripada memutar jauh.
+- `approachFromShore` membuat bot mencoba berjalan masuk air saat pathfinder melaporkan `noPath`.
+- `timeoutMs` hanya menghentikan steering. Anti-tenggelam tetap aktif sampai bot keluar air.
+- `preventDrowning` harus tetap `true` agar bot mengapung walaupun `swim.enabled` dimatikan.
+- Saat job build/gather berjalan, pathfinder job tetap mengemudi; navigator hanya menjaga bot tetap mengapung.
+
+## Navigasi permukaan
+
+Saat target follow berada di permukaan, bot memberi biaya besar pada langkah yang masuk ke gua/area beratap dan pada turun yang terlalu dalam. Target yang berada di dalam gua tetap memakai navigasi normal.
+
+```json
+"owner": {
+  "navigation": {
+    "surfaceBias": true,
+    "verticalThreshold": 4,
+    "maxDescent": 2,
+    "coverScanHeight": 4
+  }
+}
+```
+
+- `surfaceBias` menyalakan/mematikan bias permukaan.
+- `verticalThreshold` menentukan selisih tinggi target agar dianggap target di atas.
+- `maxDescent` mencegah bot turun terlalu jauh saat mengejar target permukaan.
+- `coverScanHeight` adalah jumlah blok ke atas yang dicek untuk mendeteksi atap.
+
+## Makan saat perjalanan
+
+Bot makan otomatis saat food turun. Sebelum makan, bot menghentikan pathfinder sebentar, menunggu proses menggali atau memasang block selesai, lalu melanjutkan perjalanan. Saat berada di air, bot tetap menahan `jump` selama makan.
+
+```json
+"safety": {
+  "autoEat": true,
+  "eatThreshold": 16,
+  "criticalFood": 6,
+  "eatCheckIntervalMs": 2000,
+  "eatRetryMs": 4000,
+  "noFoodAction": "stop",
+  "pauseMovementWhileEating": true
+}
+```
+
+- Bot hanya memakai makanan dari inventory.
+- Kalau food rendah tetapi tidak ada makanan, bot memberi warning dan tetap berjalan selama food masih di atas `criticalFood`.
+- Kalau food mencapai `criticalFood` dan masih tidak ada makanan, bot berhenti, whisper owner, dan menunggu. Job build/gather yang sedang berjalan dihentikan pada batas aman.
+- Setelah owner memberi makanan, bot makan lalu melanjutkan perjalanan.
+- `follow` dan `resume` mencoba melepas status menunggu makanan bila food sudah aman atau ada makanan di inventory.
+
+## Material lintas biome
+
+Sebelum menambang, bot mendeteksi biome di titik build. Kalau blueprint memakai kayu atau blok khas biome lain dan stok inventory/chest tidak cukup, bot bertanya ke owner. Pertanyaan dikelompokkan per family, misalnya semua varian cherry ditanyakan sekaligus.
+
+```json
+"build": {
+  "biomeMaterials": {
+    "enabled": true,
+    "askOwner": true,
+    "allowCustomAlternative": true,
+    "reminderMs": 30000,
+    "pickupRadius": 8,
+    "ownerSupplyTimeoutMs": 0
+  }
+}
+```
+
+Pilihan jawaban:
+
+- `1` / `ganti`: ganti seluruh family dengan alternatif yang cocok untuk biome. Contoh: cherry di savanna menjadi acacia.
+- `2` / `tetap`: bot tidak menambang/craft material itu. Owner harus drop di dekat bot atau menaruhnya di chest. Bot mengambil drop/chest dan mengingatkan berkala.
+- `3` / `stop`: batalkan job build.
+- Nama item lain: dipakai sebagai alternatif custom setelah divalidasi.
+
+`ownerSupplyTimeoutMs: 0` berarti bot menunggu tanpa batas sampai item tersedia atau job dihentikan. `gather <item>` dan `--dry-run` tidak memakai dialog ini.
+
+## Combat hostile dan armor otomatis
+
+Bot hanya menyerang mob hostile yang masuk jangkauan. Bot tidak mengejar jauh dan tidak menyerang player. Saat ada armor yang lebih baik di inventory, bot memakainya otomatis.
+
+```json
+"combat": {
+  "enabled": true,
+  "autoArmor": true,
+  "attackRange": 3.5,
+  "detectRadius": 8,
+  "maxPursueDistance": 6,
+  "attackCooldownMs": 650,
+  "defendTimeoutMs": 12000
+}
+```
+
+## Storage otomatis
+
+Saat slot kosong tinggal `minFreeSlots` atau kurang, bot mencari chest/barrel/shulker box dan menyimpan item yang bukan gear, armor, makanan, bahan bakar, atau material job.
+
+```json
+"storage": {
+  "enabled": true,
+  "radius": 32,
+  "minFreeSlots": 2,
+  "clearObstructions": true,
+  "containers": ["chest", "trapped_chest", "barrel", "shulker_box"]
+}
+```
+
+Kalau tidak ada storage, bot memberi warning dan menghentikan job. Penghalang di atas container ikut dibersihkan bila `clearObstructions` aktif; atur tinggi pembersihan lewat `gather.clearHeight`.
+
+## Membersihkan penghalang chest
+
+```json
+"gather": {
+  "clearChestObstructions": true,
+  "clearHeight": 3
+}
+```
+
+Bot hanya menggali blok yang `diggable`. Cairan atau blok yang tidak bisa digali akan menghasilkan warning dan container dilewati.
+
+## Gamemode dan Mode Creative
+
+Bot mendukung penggantian gamemode baik lewat perintah terminal maupun otomatis saat memulai job build:
+
+```text
+mcbot> gamemode
+mcbot> gamemode creative
+mcbot> gamemode survival
+```
+
+Konfigurasi `gamemode`:
+
+```json
+"gamemode": {
+  "enabled": true,
+  "command": "/gamemode {mode}",
+  "buildMode": "creative",
+  "restoreAfterBuild": true,
+  "switchTimeoutMs": 3000
+}
+```
+
+- `command`: template perintah ganti gamemode (mendukung placeholder `{mode}` dan `{username}`).
+- `buildMode`: jika disetel `"creative"` (default), bot akan mencoba berganti ke mode creative saat menjalankan `build`.
+- `restoreAfterBuild`: jika `true`, bot akan otomatis dikembalikan ke mode sebelumnya (misalnya survival) setelah build selesai.
+- **Bypass Material**: Saat mode creative aktif, bot memunculkan blok yang dibutuhkan secara instan ke inventory menggunakan packet native creative Mineflayer (`bot.creative.setInventorySlot`), sehingga proses penambangan, crafting, smelting, pencarian chest, dan dialog biome otomatis dilewati.
+- **Fallback Otomatis**: Jika server menolak perintah gamemode (misalnya bot tidak memiliki izin OP), bot akan mencatat warning dan otomatis melanjutkan build dalam mode survival biasa.
+
+## Batasan
+
+- Orientasi mengikuti file; rotasi/mirror belum ada. Arah blok menghadap (tangga, torch dinding, sign) diusahakan tetapi tidak dijamin sama persis.
+- Scaffold yang dipasang tidak dibongkar otomatis kecuali `build.removeScaffolds` diubah ke `true`.
+- Farmland dan dirt path tidak dibuat otomatis; sediakan lewat chest bila diperlukan.
+- Entity, isi chest, teks sign, dan data tile tidak ikut dibangun.
+- Build bisa gagal di area protected, claim, atau saat anti-cheat server ketat.
+- Scaffold otomatis hanya untuk target yang masih terjangkau setelah naik beberapa blok; struktur menggantung tinggi bisa butuh penanganan manual.
+- Tower follow membutuhkan block yang bisa dipasang. Kalau tidak ada dirt/grass, cobblestone, planks, atau scaffolding di sekitar, bot akan berhenti dengan warning.
+- Bot tidak memilih block berdasarkan klaim atau aturan server. Gunakan `owner.towerGather.protectRadius` dan pastikan menambang area tersebut diizinkan.
+- Mode renang hanya untuk permukaan air. Owner yang berada di bawah air atau di balik tebing tinggi belum dijamin.
+- Kalau makanan habis, bot akan berhenti dan menunggu owner. Bot tidak mencari chest atau berburu makanan otomatis.
+- Combat tidak mengejar mob di luar jangkauan dan tidak menjamin menang melawan mob kuat seperti warden atau wither.
+- Storage hanya memakai container yang terdeteksi di sekitar bot. Ender chest tidak dipakai otomatis.
+- Material lintas biome bergantung pada jawaban owner. Job akan menunggu selama owner belum menjawab atau menyediakan material pada pilihan `tetap`.
+- Bot tidak menyimpan password di log. Tetap jaga `config.json` dan gunakan akun khusus bot.
+
+## Testing
+
+```bash
+npm test
+```
+
+Tes mencakup parser `.litematic`/`.schem`, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi permukaan, dialog owner, material biome, combat, container, dan storage. Tes tidak memerlukan server Minecraft.

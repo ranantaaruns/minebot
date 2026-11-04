@@ -1,0 +1,8 @@
+node_modules/
+config.json
+*.log
+logs/
+blueprints/*
+!blueprints/README.md
+.hermes/
+minecraft_bot.md

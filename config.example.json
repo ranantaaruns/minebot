@@ -1,0 +1,192 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 25565,
+    "version": null,
+    "brand": "vanilla"
+  },
+  "bot": {
+    "username": "BuilderBot",
+    "auth": "offline"
+  },
+  "physics": {
+    "paperCollisionFix": true,
+    "playerHalfWidth": 0.30001,
+    "playerHeight": 1.80001
+  },
+  "auth": {
+    "enabled": true,
+    "password": "GANTI_PASSWORD_INI",
+    "registerCommand": "/register {password} {password}",
+    "loginCommand": "/login {password}",
+    "registerPatterns": [
+      "register",
+      "daftar",
+      "registrasi"
+    ],
+    "loginPatterns": [
+      "login",
+      "masuk",
+      "log in"
+    ],
+    "alreadyRegisteredPatterns": [
+      "already registered",
+      "sudah terdaftar",
+      "sudah register"
+    ],
+    "loggedInPatterns": [
+      "successfully logged in",
+      "berhasil login",
+      "you are now logged in",
+      "login successful"
+    ],
+    "proactiveLogin": true,
+    "proactiveLoginDelayMs": 3000,
+    "attemptDelayMs": 2500,
+    "maxAttempts": 6
+  },
+  "owner": {
+    "username": "NamaKamu",
+    "autoFollow": true,
+    "followDistance": 3,
+    "stuckTimeoutMs": 4000,
+    "maxStuckRetries": 2,
+    "stuckCooldownMs": 10000,
+    "unstickJump": true,
+    "askCoords": false,
+    "askCoordsIntervalMs": 60000,
+    "allowTower": true,
+    "towerBlocks": [
+      "dirt",
+      "grass_block",
+      "cobblestone",
+      "oak_planks",
+      "scaffolding"
+    ],
+    "towerPlaceCost": 40,
+    "towerGather": {
+      "enabled": true,
+      "item": "dirt",
+      "preferredBlocks": [
+        "grass_block",
+        "dirt"
+      ],
+      "radius": 32,
+      "protectRadius": 6,
+      "reserve": 8,
+      "minGap": 2,
+      "maxPerAttempt": 32,
+      "maxAttempts": 3,
+      "cooldownMs": 30000,
+      "timeoutMs": 120000,
+      "allowHandMining": true
+    },
+    "swim": {
+      "enabled": true,
+      "liquidCost": 12,
+      "updateMs": 250,
+      "timeoutMs": 120000,
+      "shoreStrafeAfterMs": 2000,
+      "strafeMs": 800,
+      "approachFromShore": true,
+      "approachScanDistance": 16,
+      "approachTimeoutMs": 4000
+    },
+    "navigation": {
+      "surfaceBias": true,
+      "verticalThreshold": 4,
+      "maxDescent": 2,
+      "coverScanHeight": 4
+    }
+  },
+  "combat": {
+    "enabled": true,
+    "autoArmor": true,
+    "attackRange": 3.5,
+    "detectRadius": 8,
+    "maxPursueDistance": 6,
+    "attackCooldownMs": 650,
+    "defendTimeoutMs": 12000
+  },
+  "storage": {
+    "enabled": true,
+    "radius": 32,
+    "minFreeSlots": 2,
+    "clearObstructions": true,
+    "containers": [
+      "chest",
+      "trapped_chest",
+      "barrel",
+      "shulker_box"
+    ]
+  },
+  "gamemode": {
+    "enabled": true,
+    "command": "/gamemode {mode}",
+    "buildMode": "creative",
+    "restoreAfterBuild": true,
+    "switchTimeoutMs": 3000
+  },
+  "build": {
+    "maxVolume": 200000,
+    "reach": 4.2,
+    "placeDelayMs": 120,
+    "retryLimit": 3,
+    "maxPasses": 4,
+    "anchor": "bot",
+    "removeScaffolds": false,
+    "scaffold": {
+      "enabled": true,
+      "blocks": [
+        "dirt",
+        "cobblestone",
+        "oak_planks",
+        "scaffolding"
+      ]
+    },
+    "biomeMaterials": {
+      "enabled": true,
+      "askOwner": true,
+      "allowCustomAlternative": true,
+      "reminderMs": 30000,
+      "pickupRadius": 8,
+      "ownerSupplyTimeoutMs": 0
+    }
+  },
+  "gather": {
+    "enabled": true,
+    "chestRadius": 32,
+    "mineRadius": 64,
+    "protectRadius": 8,
+    "maxMinePerJob": 1024,
+    "mineYMin": -60,
+    "mineYMax": 160,
+    "maxDepth": 8,
+    "preferChests": true,
+    "clearChestObstructions": true,
+    "clearHeight": 3
+  },
+  "safety": {
+    "autoEat": true,
+    "eatThreshold": 16,
+    "criticalFood": 6,
+    "eatCheckIntervalMs": 2000,
+    "eatRetryMs": 4000,
+    "noFoodAction": "stop",
+    "pauseMovementWhileEating": true,
+    "preventDrowning": true,
+    "minHealth": 6,
+    "pauseOnDeath": false,
+    "antiAfk": false,
+    "antiAfkIntervalMs": 45000
+  },
+  "connection": {
+    "reconnect": true,
+    "reconnectDelayMs": 5000,
+    "maxReconnectDelayMs": 60000
+  },
+  "logging": {
+    "debug": false,
+    "chat": true
+  }
+}
