@@ -50,6 +50,10 @@ class MaterialManager {
       protectOrigin: overrides.protectOrigin !== undefined ? overrides.protectOrigin : this.origin,
       protectRadius: overrides.protectRadius ?? this.gatherDir.protectRadius,
       maxMinePerJob: overrides.maxMinePerJob ?? this.gatherDir.maxMinePerJob,
+      preferCaves: overrides.preferCaves ?? this.gatherDir.preferCaves,
+      caveRadius: overrides.caveRadius ?? this.gatherDir.caveRadius,
+      caveTravelTimeoutMs: overrides.caveTravelTimeoutMs ?? this.gatherDir.caveTravelTimeoutMs,
+      caveMinOreDistance: overrides.caveMinOreDistance ?? this.gatherDir.caveMinOreDistance,
       minHealth: this.config.safety.minHealth,
       movementOptions: {
         allowTower: this.config.owner?.allowTower !== false,

@@ -140,7 +140,11 @@ const DEFAULTS = {
     maxDepth: 8,
     preferChests: true,
     clearChestObstructions: true,
-    clearHeight: 3
+    clearHeight: 3,
+    preferCaves: true,
+    caveRadius: 48,
+    caveTravelTimeoutMs: 60000,
+    caveMinOreDistance: 16
   },
   safety: {
     autoEat: true,

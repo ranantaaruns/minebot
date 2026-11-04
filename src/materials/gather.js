@@ -4,6 +4,8 @@ const { MINE_SOURCES } = require('./sources')
 const { countItemName } = require('../util/inventory')
 const { withTimeout } = require('../util/async')
 const { applyMovements } = require('../movements')
+const { goToCave } = require('../navigation/cave')
+const { isNether } = require('../safety/nether')
 
 function hasSilkTouch (bot) {
   try {
@@ -54,7 +56,11 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
     preferredBlocks = [],
     allowHandMining = false,
     avoidUnderBot = false,
-    movementOptions = {}
+    movementOptions = {},
+    preferCaves = false,
+    caveRadius = 48,
+    caveTravelTimeoutMs = 60000,
+    caveMinOreDistance = 16
   } = options
 
   const source = MINE_SOURCES[itemName]
@@ -79,35 +85,54 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
 
   const wanted = count - before
   const searchCount = Math.min(128, Math.max(16, wanted * 4 + 8))
-  let positions = []
 
-  try {
-    positions = bot.findBlocks({
-      matching: ids,
-      maxDistance: mineRadius,
-      count: searchCount
+  const findPositions = () => {
+    let found = []
+    try {
+      found = bot.findBlocks({
+        matching: ids,
+        maxDistance: mineRadius,
+        count: searchCount
+      })
+    } catch (err) {
+      logger?.debug(`findBlocks gagal: ${err.message}`)
+    }
+
+    found = found.filter(pos => {
+      if (pos.y < mineYMin || pos.y > mineYMax) return false
+      if (protectOrigin && protectRadius > 0 && pos.distanceTo(protectOrigin) <= protectRadius) return false
+      if (avoidUnderBot && isUnderBot(pos, bot.entity?.position)) return false
+      return true
     })
-  } catch (err) {
-    logger?.debug(`findBlocks gagal: ${err.message}`)
+
+    const botPosition = bot.entity.position
+    if (preferredBlocks.length > 0) {
+      found.sort((a, b) => {
+        const rankA = preferredRank(bot.blockAt(a)?.name, preferredBlocks)
+        const rankB = preferredRank(bot.blockAt(b)?.name, preferredBlocks)
+        if (rankA !== rankB) return rankA - rankB
+        return botPosition.distanceTo(a) - botPosition.distanceTo(b)
+      })
+    } else {
+      found.sort((a, b) => botPosition.distanceTo(a) - botPosition.distanceTo(b))
+    }
+    return found
   }
 
-  positions = positions.filter(pos => {
-    if (pos.y < mineYMin || pos.y > mineYMax) return false
-    if (protectOrigin && protectRadius > 0 && pos.distanceTo(protectOrigin) <= protectRadius) return false
-    if (avoidUnderBot && isUnderBot(pos, bot.entity?.position)) return false
-    return true
-  })
+  let positions = findPositions()
 
-  const botPosition = bot.entity.position
-  if (preferredBlocks.length > 0) {
-    positions.sort((a, b) => {
-      const rankA = preferredRank(bot.blockAt(a)?.name, preferredBlocks)
-      const rankB = preferredRank(bot.blockAt(b)?.name, preferredBlocks)
-      if (rankA !== rankB) return rankA - rankB
-      return botPosition.distanceTo(a) - botPosition.distanceTo(b)
+  // Di overworld, base pemain ada di bawah tanah dengan lorong menuju cave.
+  // Lebih aman dan cepat menambang dari cave terdekat daripada menggali lubang baru.
+  const nearestOre = positions[0]
+  const oreTooFar = !nearestOre || bot.entity.position.distanceTo(nearestOre) > caveMinOreDistance
+  if (preferCaves && oreTooFar && !isNether(bot)) {
+    const cave = await goToCave(bot, {
+      logger,
+      cancellation,
+      radius: caveRadius,
+      timeoutMs: caveTravelTimeoutMs
     })
-  } else {
-    positions.sort((a, b) => botPosition.distanceTo(a) - botPosition.distanceTo(b))
+    if (cave) positions = findPositions()
   }
 
   if (positions.length === 0) {
