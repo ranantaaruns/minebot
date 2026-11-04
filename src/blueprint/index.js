@@ -4,6 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const { parseLitematic } = require('./litematic')
 const { parseSchematic } = require('./schematic')
+const { parseStructure } = require('./structure')
 const { transformBlocks } = require('./transform')
 
 const EXTENSIONS = new Set(['.schem', '.schematic', '.litematic', '.nbt'])
@@ -93,7 +94,7 @@ async function loadBlueprint (filePath, options = {}) {
   const ext = path.extname(resolved).toLowerCase()
 
   if (ext && !EXTENSIONS.has(ext)) {
-    throw new Error(`Format tidak dikenal: ${ext}. Gunakan .schem, .schematic, atau .litematic`)
+    throw new Error(`Format tidak dikenal: ${ext}. Gunakan .schem, .schematic, .litematic, atau .nbt`)
   }
   if (!fs.existsSync(resolved)) {
     throw new Error(`File blueprint tidak ditemukan: ${resolved}`)
@@ -106,8 +107,10 @@ async function loadBlueprint (filePath, options = {}) {
   let lastError = null
 
   const order = ext === '.litematic'
-    ? [parseLitematic, parseSchematic]
-    : [parseSchematic, parseLitematic]
+    ? [parseLitematic, parseSchematic, parseStructure]
+    : ext === '.nbt'
+      ? [parseStructure, parseSchematic, parseLitematic]
+      : [parseSchematic, parseStructure, parseLitematic]
 
   for (const parser of order) {
     try {

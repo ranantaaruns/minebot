@@ -11,6 +11,7 @@ const mcDataLoader = require('minecraft-data')
 
 const { parseLitematic, decodePackedLongs, bitsForPalette } = require('../src/blueprint/litematic')
 const { parseSchematic } = require('../src/blueprint/schematic')
+const { parseStructure } = require('../src/blueprint/structure')
 const { loadBlueprint, normalizeBlueprint, stateKey } = require('../src/blueprint')
 const { computeRequirements, resolveItemName } = require('../src/materials/requirements')
 
@@ -184,6 +185,73 @@ test('loadBlueprint menerapkan rotate dan mirror pada blok', async () => {
   const mirrored = await loadBlueprint(file, { maxVolume: 100, mirror: 'x' })
   assert.deepEqual(mirrored.size, { x: 2, y: 1, z: 1 })
   assert.deepEqual(mirrored.transform, { rotate: 0, mirror: 'x' })
+
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+function structureBuffer ({ palette, blocks, size = { x: 2, y: 1, z: 1 }, dataVersion = 3953 }) {
+  const data = nbt.comp({
+    DataVersion: nbt.int(dataVersion),
+    size: nbt.list(nbt.int([size.x, size.y, size.z])),
+    palette: nbt.list(nbt.comp(palette.map(entry => ({ ...entry })))),
+    blocks: nbt.list(nbt.comp(blocks.map(block => ({
+      pos: nbt.list(nbt.int([...block.pos])),
+      state: nbt.int(block.state)
+    }))))
+  })
+  return nbt.writeUncompressed(data, 'big')
+}
+
+test('parseStructure reads palette, properties and skips air', async () => {
+  const buffer = structureBuffer({
+    palette: [
+      { Name: nbt.string('minecraft:air') },
+      { Name: nbt.string('minecraft:stone') },
+      {
+        Name: nbt.string('minecraft:oak_stairs'),
+        Properties: nbt.comp({ facing: nbt.string('east') })
+      }
+    ],
+    blocks: [
+      { pos: [0, 0, 0], state: 1 },
+      { pos: [1, 0, 1], state: 2 },
+      { pos: [1, 0, 0], state: 0 }
+    ],
+    size: { x: 2, y: 1, z: 2 }
+  })
+
+  const parsed = await parseStructure(buffer, { maxVolume: 100, name: 'gudang.nbt' })
+  assert.equal(parsed.format, 'structure')
+  assert.equal(parsed.blocks.length, 2)
+  assert.equal(parsed.blocks[0].name, 'minecraft:stone')
+  assert.equal(parsed.blocks[0].x, 0)
+  assert.equal(parsed.blocks[1].name, 'minecraft:oak_stairs')
+  assert.equal(parsed.blocks[1].properties.facing, 'east')
+  assert.equal(parsed.blocks[1].z, 1)
+})
+
+test('parseStructure rejects files without palette or blocks', async () => {
+  const empty = nbt.writeUncompressed(nbt.comp({ DataVersion: nbt.int(3953) }), 'big')
+  await assert.rejects(() => parseStructure(empty), /bukan struktur/)
+})
+
+test('loadBlueprint membaca file .nbt berformat structure block', async () => {
+  const buffer = structureBuffer({
+    palette: [{ Name: nbt.string('minecraft:stone') }],
+    blocks: [
+      { pos: [0, 0, 0], state: 0 },
+      { pos: [1, 0, 0], state: 0 }
+    ]
+  })
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcbot-'))
+  const file = path.join(dir, 'gudang.nbt')
+  fs.writeFileSync(file, buffer)
+
+  const blueprint = await loadBlueprint(file, { maxVolume: 100, rotate: 90 })
+  assert.equal(blueprint.format, 'structure')
+  assert.equal(blueprint.blocks.length, 2)
+  assert.deepEqual(blueprint.size, { x: 1, y: 1, z: 2 })
 
   fs.rmSync(dir, { recursive: true, force: true })
 })
