@@ -185,6 +185,7 @@ const DEFAULTS = {
       waitMs: 2000,
       gap: 1,
       climb: true,
+      removeScaffolds: false,
       maxFailures: 6,
       maxClimbs: 6
     }

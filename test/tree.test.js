@@ -22,6 +22,21 @@ const MC = {
   itemsByName: { dark_oak_log: { id: LOG_ID, name: 'dark_oak_log' } }
 }
 
+const MC_WITH_DIRT = {
+  blocksByName: {
+    dark_oak_log: { id: LOG_ID },
+    dirt: { id: 3 },
+    stone: { id: 1 },
+    cobblestone: { id: 4 }
+  },
+  itemsByName: {
+    dark_oak_log: { id: LOG_ID, name: 'dark_oak_log', stackSize: 64 },
+    dirt: { id: 3, name: 'dirt', stackSize: 64 },
+    stone: { id: 1, name: 'stone', stackSize: 64 },
+    cobblestone: { id: 4, name: 'cobblestone', stackSize: 64 }
+  }
+}
+
 function key (pos) {
   return `${pos.x},${pos.y},${pos.z}`
 }
@@ -68,9 +83,25 @@ function makeBot (world, origin, username = 'bot') {
     },
     async dig (block) {
       world.delete(key(block.position))
-      inventory.push({ name: 'dark_oak_log', type: LOG_ID, count: 1 })
+      if (block.name === 'dark_oak_log') inventory.push({ name: 'dark_oak_log', type: LOG_ID, count: 1 })
       dug.push(block.position.clone())
-    }
+      // Jatuh kalau blok pijakan dibongkar.
+      const feet = this.entity.position.floored()
+      if (block.position.x === feet.x && block.position.z === feet.z && block.position.y === feet.y - 1) {
+        this.entity.position.y -= 1
+      }
+    },
+    async placeBlock (refBlock, face) {
+      // Tiru jump-place: blok masuk ke kolom kaki lalu bot naik satu blok.
+      const feet = this.entity.position.floored()
+      world.set(key(feet), { name: 'dirt', type: 3, position: feet.clone(), boundingBox: 'block' })
+      this.entity.position.y += 1
+      return true
+    },
+    setControlState () {},
+    async lookAt () {},
+    async equip (item) { this.heldItem = item },
+    heldItem: null
   }
 }
 
@@ -260,4 +291,25 @@ test('gatherLogs berhenti dengan alasan not-found kalau tidak ada pohon', async 
   const result = await gatherLogs(bot, MC, null, 'dark_oak_log', 32, { logger: silentLogger, claims: new TreeClaims() })
   assert.equal(result.mined, 0)
   assert.equal(result.reason, 'not-found')
+})
+
+test('chopTree menumpuk scaffolding untuk menebang pohon tinggi sampai habis', async () => {
+  const positions = trunk(0, 0, 6)
+  const world = makeWorld(positions)
+  // Tanah pijakan di bawah bot supaya pillarUp bisa menaruh blok.
+  world.set('2,69,0', { name: 'stone', type: 1, position: new Vec3(2, 69, 0), boundingBox: 'block' })
+
+  const bot = makeBot(world, new Vec3(2, 70, 0))
+  bot.inventory.items = () => [{ name: 'dirt', type: 3, count: 16, slot: 0 }]
+
+  const tree = { id: 'tree-1', blocks: positions }
+  const result = await chopTree(bot, MC_WITH_DIRT, tree, { logger: silentLogger, walkTimeoutMs: 500 })
+
+  assert.ok(result.climbs > 0, 'harus menumpuk blok untuk mencapai puncak')
+  assert.ok(result.scaffolds.length > 0, 'posisi scaffolding dicatat')
+  assert.equal(result.chopped, positions.length, 'seluruh batang 2x2 x 6 tingkat habis ditebang')
+  assert.equal([...world.values()].filter(block => block.name === 'dark_oak_log').length, 0, 'tidak ada log tersisa')
+  // removeScaffolds default false: tumpukan dirt dibiarkan, sisanya harus sama
+  // dengan scaffolding yang tidak dibongkar saat turun.
+  assert.equal([...world.values()].filter(block => block.name === 'dirt').length, result.scaffolds.length)
 })

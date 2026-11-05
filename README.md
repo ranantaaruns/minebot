@@ -540,7 +540,7 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
 
 - Setiap bot mengklaim **satu pohon** lewat registry klaim yang dipakai bersama semua sesi bot dalam satu proses. Bot lain melewati pohon yang sudah diklaim, jadi swarm berpencar, bukan menyerbu satu pohon.
 - Dalam satu pohon, blok **tertinggi yang sudah terjangkau ditebang lebih dulu**, lalu turun ke bawah. Ini yang diminta untuk pohon besar seperti dark oak: tebang dari atas, bukan menggali bagian bawah dan meninggalkan puncak yang tidak terjangkau.
-- Kalau puncak masih di atas jangkauan (4,3 blok dari mata), bot menumpuk 1 blok (dirt/cobblestone atau log hasil tebangan sendiri) untuk mendekat, sampai `maxClimbs` kali.
+- Kalau puncak masih di atas jangkauan (4,3 blok dari mata), bot menumpuk blok (dirt/cobblestone lebih dulu, log hasil tebangan sendiri sebagai pilihan terakhir) untuk mendekat, sampai `maxClimbs` kali. Setelah puncak habis dan sisa batang ada di bawah, bot membongkar tumpukannya sendiri lalu turun, jadi batang bawah ikut ditebang — bukan ditinggal karena terlalu jauh di bawah kaki.
 - Kalau sisa blok ada di samping (cabang), bot mencari posisi berdiri yang benar-benar kosong di sekitar blok lalu berjalan ke sana. Posisi berdiri ini juga dipakai saat menambang, sehingga trunk 2×2 dark oak tidak lagi gagal dengan `unreachable`.
 - Kalau satu pohon sudah habis, bot pindah ke pohon terdekat berikutnya yang belum diklaim, dan radius pencarian melebar otomatis (64 → 96 → 128 blok) kalau pohon di sekitar sudah habis.
 
@@ -556,7 +556,8 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
     "maxClimbs": 6,
     "maxFailures": 6,
     "waitMs": 2000,
-    "climb": true
+    "climb": true,
+    "removeScaffolds": false
   }
 }
 ```
@@ -566,6 +567,7 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
 - `maxEmptyTrees` jumlah pohon gagal beruntun sebelum job berhenti dengan alasan `unreachable`; `maxFailures` jumlah blok gagal dalam satu pohon.
 - `waitMs` jeda tunggu kalau semua pohon di sekitar sedang diklaim bot lain.
 - `climb: false` melarang bot menumpuk blok untuk mencapai puncak (bot hanya menebang yang terjangkau).
+- `removeScaffolds: true` membongkar tumpukan blok setelah pohon selesai ditebang (default `false`, sama seperti perilaku `removeScaffolds` global).
 - Log progres muncul per pohon: `Bot <nama> menebang pohon <id> (n blok, tinggi h, jarak d blok)` dan `Pohon <id>: n log ditebang, progres x/y`.
 
 Kalau perintah dijalankan lewat swarm, sisa kuota yang belum terpenuhi dibagi lagi ke bot yang idle sampai `swarm.gatherRounds` putaran (default 2), jadi kekurangan tidak langsung dilaporkan sebagai "selesai sebagian" tanpa usaha kedua.

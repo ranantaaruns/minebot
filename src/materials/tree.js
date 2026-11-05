@@ -253,7 +253,7 @@ async function climbOne (bot, mcData, options = {}) {
       maxBlocks: 2
     })
     const placed = res?.placed?.length || 0
-    return { ok: placed > 0, placed, reason: res?.reason }
+    return { ok: placed > 0, placed, positions: res?.placed || [], reason: res?.reason }
   } catch (err) {
     return { ok: false, reason: err?.message || 'climb-failed' }
   }
@@ -274,11 +274,12 @@ async function chopTree (bot, mcData, tree, options = {}) {
     maxFailures = 6,
     maxClimbs = 6,
     climb = true,
+    removeScaffolds = false,
     ownerId = null,
     claims = null
   } = options
 
-  const stats = { chopped: 0, blocks: 0, climbs: 0, skipped: 0, reason: null }
+  const stats = { chopped: 0, blocks: 0, climbs: 0, skipped: 0, scaffolds: [], reason: null }
   if (!tree || !tree.blocks?.length) {
     stats.reason = 'empty-tree'
     return stats
@@ -326,10 +327,28 @@ async function chopTree (bot, mcData, tree, options = {}) {
       const up = await climbOne(bot, mcData, { ...options, cancellation, logger })
       if (up.ok) {
         stats.climbs++
+        if (up.positions?.length) stats.scaffolds.push(...up.positions)
         logger?.debug(`Menumpuk ${up.placed} blok untuk mencapai puncak pohon di y=${highest.y}`)
         continue
       }
       if (up.reason) logger?.debug(`Tidak bisa naik ke puncak pohon: ${up.reason}`)
+    }
+
+    // Semua sisa blok ada di bawah bot (puncak sudah habis): turun dengan
+    // membongkar scaffolding sendiri supaya batang bawah masuk jangkauan lagi.
+    if (highest.y < feetY - 2 && stats.scaffolds.length > 0) {
+      const feet = bot.entity.position.floored()
+      const below = bot.blockAt(feet.offset(0, -1, 0))
+      const belowKey = below ? blockKey(below.position) : null
+      if (belowKey && stats.scaffolds.some(pos => blockKey(pos) === belowKey)) {
+        const dug = await mineBlock(bot, below, { logger, digTimeoutMs, walkTimeoutMs })
+        if (dug.ok) {
+          stats.scaffolds = stats.scaffolds.filter(pos => blockKey(pos) !== belowKey)
+          stats.descends = (stats.descends || 0) + 1
+          await new Promise(resolve => setTimeout(resolve, 400))
+          continue
+        }
+      }
     }
 
     // Berjalan ke blok tersisa berikutnya (mis. cabang yang agak jauh).
@@ -357,6 +376,15 @@ async function chopTree (bot, mcData, tree, options = {}) {
     if (failed.size >= maxFailures) {
       stats.reason = dug.reason || 'unreachable'
       break
+    }
+  }
+
+  if (removeScaffolds && stats.scaffolds.length > 0) {
+    try {
+      const { removeTower } = require('../build/scaffold')
+      await removeTower(bot, stats.scaffolds, { cancellation, logger })
+    } catch (err) {
+      logger?.debug(`Gagal membongkar scaffolding: ${err.message}`)
     }
   }
 
@@ -396,7 +424,9 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
   const maxEmpty = Number(tree.maxEmptyTrees) || 3
   const minSize = Number(tree.minTreeSize) || 1
   const maxTrees = Number(tree.maxTreesPerJob) || 64
-  const scaffoldBlocks = tree.scaffoldBlocks || [bareName(itemName), 'dirt', 'cobblestone']
+  // Dirt/cobblestone lebih dulu supaya log hasil tebangan tidak dipakai sebagai
+  // scaffolding (itu mengurangi hasil yang dilaporkan ke owner).
+  const scaffoldBlocks = tree.scaffoldBlocks || ['dirt', 'cobblestone', 'stone', bareName(itemName)]
 
   if (typeof bot.pathfinder?.setMovements !== 'function') {
     logger?.debug('Pathfinder tidak siap; menebang hanya blok yang terjangkau')
@@ -485,6 +515,7 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
       claims: registry,
       scaffoldBlocks,
       climb: tree.climb !== false,
+      removeScaffolds: tree.removeScaffolds === true,
       maxFailures: Number(tree.maxFailures) || undefined,
       maxClimbs: Number(tree.maxClimbs) || undefined
     })
