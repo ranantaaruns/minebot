@@ -278,6 +278,9 @@ class ArrowDodger {
     if (!this.enabled || this.stopped) return null
     const self = this.bot?.entity
     if (!self?.position) return null
+    // Bergeser saat makan akan membatalkan konsumsi (dan membuat bot kelaparan
+    // di tengah pertarungan), jadi tunggu makan selesai.
+    if (this.bot?.consuming || this.bot?.foodManager?.eating) return null
 
     this.history.forEach((entry, id) => {
       if (!this.bot.entities?.[id]) this.history.delete(id)

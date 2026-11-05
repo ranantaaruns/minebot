@@ -14,6 +14,7 @@ const { CombatManager } = require('./safety/combat')
 const { StorageManager } = require('./storage/manager')
 const { isNether, StructureAvoidance, ensureGoldArmor } = require('./safety/nether')
 const { LavaGuard } = require('./safety/lava')
+const { ArrowDodger } = require('./safety/dodge')
 const { sleep } = require('./util/async')
 
 function craftingPlugin () {
@@ -167,6 +168,9 @@ async function createBot (config, logger) {
 
   bot.lavaGuard = new LavaGuard(bot, config, logger)
   bot.lavaGuard.start()
+
+  bot.arrowDodger = new ArrowDodger(bot, config, logger)
+  bot.arrowDodger.start()
 
   return bot
 }

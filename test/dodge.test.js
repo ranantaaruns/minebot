@@ -193,3 +193,17 @@ test('ArrowDodger mengabaikan panah di luar jangkauan dan saat dinonaktifkan', (
   assert.equal(off.update(1000), null)
   assert.equal(off.stats.dodges, 0)
 })
+
+test('ArrowDodger tidak bergeser saat bot sedang makan', () => {
+  const bot = fakeBot()
+  bot.entities[7] = arrow(7, [6, 65, 0], [-1, 0, 0])
+  const dodger = new ArrowDodger(bot, { safety: { arrowDodge: { tickMs: 20, dodgeMs: 200, cooldownMs: 0 } } }, silentLogger)
+
+  bot.foodManager = { eating: true }
+  assert.equal(dodger.update(1000), null, 'makan tidak boleh dibatalkan oleh dodge')
+
+  bot.foodManager = { eating: false }
+  const reaction = dodger.update(1000)
+  assert.ok(reaction, 'setelah makan selesai bot boleh menghindar')
+  dodger.stop()
+})

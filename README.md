@@ -437,6 +437,27 @@ Nilai `combat.hunt` untuk critical hit:
 | `shieldBreakPunishMs` | `5000` | Lama shield lawan cooldown setelah kena kapak |
 | `shieldBreakWindowMs` | `1500` | Jendela pemeriksaan darah untuk menilai pukulan diblok |
 
+### Mengelak panah saat diserang
+
+`src/safety/dodge.js` membuat bot bergeser sedikit dari garis tembakan panah yang menuju ke arahnya. Setiap `tickMs` (default 80 ms) bot memeriksa semua entitas panah dalam radius `detectRange`: lintasan tiap panah disimulasikan per tick dari posisi + kecepatannya (drag 0.99 dan gravitasi, sama seperti panah sungguhan), lalu dihitung apakah lintasan itu akan melewati badan bot (sumbu vertikal bodi ditambah radius `radius`). Panah yang bakal lewat dalam beberapa tick dicatat sebagai ancaman.
+
+Untuk ancaman itu bot memilih arah geser **tegak lurus garis tembakan** (sisi yang paling jauh dari lintasan) lalu menahan kontrol `left`/`right` (plus `forward`/`back` kalau panahnya datang hampir dari samping) selama `dodgeMs`. Karena geserannya kecil dan ke samping, bot tetap mendekati lawan — bukan lari mundur. Kalau panah yang sama masih mengancam setelah `dodgeMs`, bot bergeser sekali lagi, tetapi ada jeda `cooldownMs` supaya tidak bergetar bolak-balik di tempat.
+
+Bot juga **mengelak sebelum panah lahir**: kalau ada mob/player dengan busur yang sedang menarik panah (`entityDrawingBow`, metadata use-item + item `bow` di tangan) dan menghadap ke bot dalam `drawRange`, bot sudah bergeser duluan. Serangan panah yang sedang mengarah tepat ke badan bot lalu dilepas setelah busur penuh akan melewati posisi lama bot.
+
+Dodge dimatikan sementara saat bot sedang makan (`bot.consuming` / FoodManager `eating`), karena bergeser membatalkan konsumsi — heal lebih penting daripada menghindari satu panah. Pada kematian/koneksi putus dodger ikut dihentikan.
+
+| Opsi | Default | Fungsi |
+| --- | --- | --- |
+| `enabled` | `true` | Aktifkan penghindaran panah |
+| `detectRange` | `16` | Jarak (blok) panah yang mulai diperhitungkan |
+| `drawRange` | `20` | Jarak lawan yang menarik busur untuk elakan preemptif |
+| `dodgeMs` | `220` | Lama menahan kontrol geser dalam satu elakan |
+| `cooldownMs` | `500` | Jeda minimum sebelum elakan berikutnya |
+| `tickMs` | `80` | Interval pemeriksaan lintasan panah |
+| `radius` | `0.55` | Setengah lebar badan bot untuk uji lintasan (blok) |
+| `ticks` | `40` | Berapa tick ke depan lintasan disimulasikan |
+
 ### Retreat dan heal saat PvP
 
 Kalau darah bot turun sampai `retreatHealth` (default 10), bot berhenti menyerang lalu **lari menjauh dari target sambil makan**. Tidak ada lagi pencarian "tempat aman" lewat pathfinder — bot cukup memakai kontrol gerak (`forward` + `sprint`), jadi tidak mungkin gagal dengan `Path was stopped before it could be completed`. Arah lari selalu menjauh dari target, tetapi berganti-ganti kiri/kanan setiap `retreatZigzagMs` sebesar `retreatZigzagDeg`, sehingga bot tidak berlari lurus dan serangan lawan lebih sering meleset. Sebelum berbelok, bot memeriksa blok di depan: lava, api, kaktus, atau dinding akan membuatnya memilih arah belok lain (0°, ±45°, ±90°, ±135°, 180°). Saat tidak bisa maju (menabrak), bot melompat.

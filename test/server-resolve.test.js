@@ -60,32 +60,20 @@ test('resolveServer extracts port from host string with colon', async () => {
 })
 
 test('resolveServer resolves SRV record for live tunnel domain without port', async () => {
+  // Tes ini tidak boleh bergantung pada DNS/tunnel yang sedang hidup: rekaman
+  // SRV di-stub supaya hasilnya deterministik (dulu gagal saat tunnel ply.gg
+  // berganti port).
   const dns = require('dns').promises
-  let isOffline = false
+  const original = dns.resolveSrv
+  dns.resolveSrv = async () => [{ name: 'vivo-checker.tun.ply.gg', port: 31555, priority: 0, weight: 0 }]
   try {
-    await dns.resolveSrv('_minecraft._tcp.vivo-checker.tun.ply.gg')
-  } catch {
-    isOffline = true
+    const res = await resolveServer('vivo-checker.tun.ply.gg', null)
+    assert.equal(res.host, 'vivo-checker.tun.ply.gg')
+    assert.equal(res.port, 31555)
+    assert.equal(res.srv, true)
+  } finally {
+    dns.resolveSrv = original
   }
-
-  if (isOffline) {
-    const original = dns.resolveSrv
-    dns.resolveSrv = async () => [{ name: 'vivo-checker.tun.ply.gg', port: 31555, priority: 0, weight: 0 }]
-    try {
-      const res = await resolveServer('vivo-checker.tun.ply.gg', null)
-      assert.equal(res.host, 'vivo-checker.tun.ply.gg')
-      assert.equal(res.port, 31555)
-      assert.equal(res.srv, true)
-    } finally {
-      dns.resolveSrv = original
-    }
-    return
-  }
-
-  const res = await resolveServer('vivo-checker.tun.ply.gg', null)
-  assert.equal(res.host, 'vivo-checker.tun.ply.gg')
-  assert.equal(res.port, 31555)
-  assert.equal(res.srv, true)
 })
 
 test('resolveServer falls back to 25565 for IP address or missing SRV', async () => {

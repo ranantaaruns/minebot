@@ -206,6 +206,16 @@ const DEFAULTS = {
       cooldownMs: 1500
     },
     minHealth: 6,
+    arrowDodge: {
+      enabled: true,
+      detectRange: 16,
+      drawRange: 20,
+      dodgeMs: 220,
+      cooldownMs: 500,
+      tickMs: 80,
+      radius: 0.55,
+      ticks: 40
+    },
     pauseOnDeath: false,
     antiAfk: false,
     antiAfkIntervalMs: 45000

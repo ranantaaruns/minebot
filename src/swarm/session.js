@@ -150,6 +150,7 @@ class BotSession {
       this.connected = false
       this.spawned = false
       bot.combatManager?.stop()
+      bot.arrowDodger?.stop()
       this.bot = null
       this.auth?.stop()
       this.gamemode = null
