@@ -176,7 +176,7 @@ const DEFAULTS = {
     caveMinOreDistance: 16,
     tree: {
       enabled: true,
-      scanRadius: 64,
+      scanRadius: 48,
       maxScanRadius: 128,
       scanCount: 512,
       maxEmptyTrees: 3,

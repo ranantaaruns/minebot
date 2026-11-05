@@ -505,9 +505,23 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
       continue
     }
 
-    logger?.info(`Bot ${owner} menebang pohon ${target.id} (${target.size} blok, tinggi ${target.height}, ${picked.distance.toFixed(1)} blok)`)
+    // Pohon bisa sudah dihabisi bot lain sejak pemindaian terakhir: buang blok
+    // yang sudah hilang supaya tidak dihitung sebagai kegagalan menambang.
+    const stillThere = target.blocks.filter(pos => {
+      const found = bot.blockAt(pos)
+      return found && isLogName(found.name)
+    })
+    if (stillThere.length === 0) {
+      registry.release(target.id, owner)
+      exclude.add(target.id)
+      logger?.debug(`Pohon ${target.id} sudah habis; pindah ke pohon lain`)
+      continue
+    }
+    const chopping = stillThere.length === target.blocks.length ? target : { ...target, blocks: stillThere, size: stillThere.length }
 
-    const result = await chopTree(bot, mcData, target, {
+    logger?.info(`Bot ${owner} menebang pohon ${chopping.id} (${chopping.size} blok, tinggi ${chopping.height}, ${picked.distance.toFixed(1)} blok)`)
+
+    const result = await chopTree(bot, mcData, chopping, {
       ...options,
       logger,
       cancellation,
@@ -539,7 +553,7 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
     }
 
     have = countItemName(bot, mcData, itemName)
-    logger?.info(`Pohon ${target.id}: ${result.chopped} log ditebang, progres ${have}/${count}`)
+    logger?.info(`Pohon ${chopping.id}: ${result.chopped} log ditebang, progres ${have}/${count}`)
 
     if (result.chopped === 0) {
       emptyTrees++

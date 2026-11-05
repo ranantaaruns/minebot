@@ -542,13 +542,13 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
 - Dalam satu pohon, blok **tertinggi yang sudah terjangkau ditebang lebih dulu**, lalu turun ke bawah. Ini yang diminta untuk pohon besar seperti dark oak: tebang dari atas, bukan menggali bagian bawah dan meninggalkan puncak yang tidak terjangkau.
 - Kalau puncak masih di atas jangkauan (4,3 blok dari mata), bot menumpuk blok (dirt/cobblestone lebih dulu, log hasil tebangan sendiri sebagai pilihan terakhir) untuk mendekat, sampai `maxClimbs` kali. Setelah puncak habis dan sisa batang ada di bawah, bot membongkar tumpukannya sendiri lalu turun, jadi batang bawah ikut ditebang — bukan ditinggal karena terlalu jauh di bawah kaki.
 - Kalau sisa blok ada di samping (cabang), bot mencari posisi berdiri yang benar-benar kosong di sekitar blok lalu berjalan ke sana. Posisi berdiri ini juga dipakai saat menambang, sehingga trunk 2×2 dark oak tidak lagi gagal dengan `unreachable`.
-- Kalau satu pohon sudah habis, bot pindah ke pohon terdekat berikutnya yang belum diklaim, dan radius pencarian melebar otomatis (64 → 96 → 128 blok) kalau pohon di sekitar sudah habis.
+- Kalau satu pohon sudah habis, bot pindah ke pohon terdekat berikutnya yang belum diklaim. Blok pohon kandidat dicek ulang sebelum ditebang (pohon bisa sudah dihabisi bot lain), dan radius pencarian melebar otomatis (48 → 72 → 108 → 128 blok) kalau pohon di sekitar sudah habis.
 
 ```json
 "gather": {
   "tree": {
     "enabled": true,
-    "scanRadius": 64,
+    "scanRadius": 48,
     "maxScanRadius": 128,
     "minTreeSize": 4,
     "maxEmptyTrees": 3,
