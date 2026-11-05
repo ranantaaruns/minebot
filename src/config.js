@@ -242,6 +242,20 @@ const DEFAULTS = {
     antiAfk: false,
     antiAfkIntervalMs: 45000
   },
+  intel: {
+    tracker: {
+      enabled: true,
+      historyLength: 64,
+      staleMs: 15000,
+      saveDebounceMs: 2000,
+      alertRadius: 32,
+      alertChat: false,
+      alertCooldownMs: 10000,
+      predictTicks: 100,
+      maxSpeed: 12,
+      dir: 'data/tracker'
+    }
+  },
   nether: {
     portalFollow: true,
     portalWaitTimeoutMs: 20000,
@@ -461,6 +475,24 @@ function validate (config) {
       errors.push('safety.noFoodAction harus "stop" atau "continue"')
     }
   }
+  if (!isObject(config.intel)) {
+    errors.push('intel harus berupa object')
+  } else if (!isObject(config.intel.tracker)) {
+    errors.push('intel.tracker harus berupa object')
+  } else {
+    const positive = ['staleMs', 'saveDebounceMs', 'alertCooldownMs', 'maxSpeed']
+    for (const key of positive) {
+      const value = Number(config.intel.tracker[key])
+      if (!Number.isFinite(value) || value <= 0) errors.push(`intel.tracker.${key} harus lebih dari 0`)
+    }
+    const history = Number(config.intel.tracker.historyLength)
+    if (!Number.isInteger(history) || history < 1 || history > 512) errors.push('intel.tracker.historyLength harus bilangan bulat 1-512')
+    const radius = Number(config.intel.tracker.alertRadius)
+    if (!Number.isFinite(radius) || radius < 0) errors.push('intel.tracker.alertRadius tidak boleh negatif')
+    const predict = Number(config.intel.tracker.predictTicks)
+    if (!Number.isInteger(predict) || predict < 0 || predict > 400) errors.push('intel.tracker.predictTicks harus bilangan bulat 0-400')
+    if (typeof config.intel.tracker.dir !== 'string' || !config.intel.tracker.dir.trim()) errors.push('intel.tracker.dir wajib diisi')
+  }
   if (config.auth.enabled) {
     if (!config.auth.password || config.auth.password === 'GANTI_PASSWORD_INI') {
       errors.push('auth.password wajib diisi')
@@ -576,6 +608,11 @@ function loadConfig (configPath) {
   if (isObject(config.safety)) {
     for (const key of ['eatThreshold', 'criticalFood', 'eatCheckIntervalMs', 'eatRetryMs']) {
       config.safety[key] = Number(config.safety[key])
+    }
+  }
+  if (isObject(config.intel?.tracker)) {
+    for (const key of ['historyLength', 'staleMs', 'saveDebounceMs', 'alertRadius', 'alertCooldownMs', 'predictTicks', 'maxSpeed']) {
+      config.intel.tracker[key] = Number(config.intel.tracker[key])
     }
   }
   if (config.server.version === 'auto' || config.server.version === '') config.server.version = null
