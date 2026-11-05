@@ -35,6 +35,7 @@ Perintah yang tersedia:
   gather <item> [count]         Kumpulkan material (contoh: gather ancient_debris 4)
   attack <nama player>          Cari dan bunuh player (bow dipakai untuk jarak jauh)
   combat [on|off]               Lihat/aktifkan mesin PvP udara (mace + elytra charge)
+  track [on|off|where <p>|export [file]|clear]  Lacak koordinat player dari paket entity
   come [x y z]                  Datang ke owner (atau koordinat tertentu)
   follow                        Aktifkan auto-follow owner
   say <teks>                    Kirim pesan ke chat server
@@ -751,6 +752,82 @@ class Cli {
     if (!lines.length) throw new Error('Bot belum terhubung atau engine PvP tidak tersedia')
     for (const line of lines) this.logger.info(`Combat ${line}`)
     return lines
+  }
+
+  async handleTrack (args) {
+    const mode = String(args[0] || '').toLowerCase()
+    const sessions = this.swarm ? this.swarm.getConnectedBots() : [this.session]
+    const lines = []
+
+    if (mode === '' || mode === 'list') {
+      for (const s of sessions) {
+        const tracker = s?.bot?.playerTracker
+        if (!tracker) continue
+        const rows = tracker.list()
+        lines.push(`${s.bot.username || 'bot'}: ${tracker.enabled ? 'aktif' : 'nonaktif'} (${rows.length} player, ${tracker.stats?.samples || 0} sampel)`)
+        for (const row of rows.slice(0, 10)) {
+          const age = `${Math.round(row.ageMs / 1000)}s lalu`
+          lines.push(`  ${row.username} @ ${row.coords} ${row.compass} ${Math.round(row.distance)} blok, ${row.stale ? 'prediksi' : 'segar'} (${age})`)
+        }
+      }
+      if (!lines.length) throw new Error('Bot belum terhubung atau tracker tidak tersedia')
+      for (const line of lines) this.logger.info(`Track ${line}`)
+      return lines
+    }
+
+    if (mode === 'on' || mode === 'aktif' || mode === 'off' || mode === 'mati') {
+      const enable = mode === 'on' || mode === 'aktif'
+      for (const s of sessions) {
+        const tracker = s?.bot?.playerTracker
+        if (!tracker) continue
+        tracker.enabled = enable
+        lines.push(`${s.bot.username || 'bot'}: ${enable ? 'aktif' : 'nonaktif'}`)
+      }
+      if (!lines.length) throw new Error('Tracker tidak tersedia')
+      for (const line of lines) this.logger.info(`Track ${line}`)
+      return lines
+    }
+
+    if (mode === 'where') {
+      const name = args[1]
+      if (!name) throw new Error('Gunakan: track where <player>')
+      for (const s of sessions) {
+        const info = s?.bot?.playerTracker?.where(name)
+        if (!info) continue
+        lines.push(`${s.bot.username || 'bot'} -> ${info.username} @ ${info.coords} (${info.dimension || '?'}) jarak ${Math.round(info.distance)} blok arah ${info.compass || '?'}, ${info.stale ? 'PREDIKSI' : 'segar'} ${Math.round(info.ageMs / 1000)}s lalu`)
+        if (info.prediction) {
+          lines.push(`  prediksi ${Math.round((info.prediction.aheadMs || 0) / 1000)}s: ${info.prediction.x.toFixed(1)} ${info.prediction.y.toFixed(1)} ${info.prediction.z.toFixed(1)} (+-${(info.prediction.uncertainty || 0).toFixed(1)} blok)`)
+        }
+      }
+      if (!lines.length) throw new Error(`Koordinat ${name} tidak ada di tracker`)
+      for (const line of lines) this.logger.info(`Track ${line}`)
+      return lines
+    }
+
+    if (mode === 'export') {
+      const file = args[1] || `data/tracker/export-${Date.now()}.json`
+      for (const s of sessions) {
+        const tracker = s?.bot?.playerTracker
+        if (!tracker) continue
+        const target = await tracker.exportTo(file)
+        lines.push(`${s.bot.username || 'bot'} -> ${target}`)
+      }
+      if (!lines.length) throw new Error('Tracker tidak tersedia')
+      for (const line of lines) this.logger.info(`Track ${line}`)
+      return lines
+    }
+
+    if (mode === 'clear') {
+      for (const s of sessions) {
+        s?.bot?.playerTracker?.clear()
+        lines.push(`${s.bot.username || 'bot'}: riwayat dihapus`)
+      }
+      if (!lines.length) throw new Error('Tracker tidak tersedia')
+      for (const line of lines) this.logger.info(`Track ${line}`)
+      return lines
+    }
+
+    throw new Error('Gunakan: track [on|off|where <player>|export [file]|clear]')
   }
 
   async handleCome (args) {
