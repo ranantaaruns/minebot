@@ -30,6 +30,7 @@ test('DEFAULTS punya combat.pvp lengkap', () => {
   assert.equal(pvp.clutchMinFall, 3)
   assert.equal(pvp.clutchHeight, 1.8)
   assert.equal(pvp.chargeRange, 12)
+  assert.equal(pvp.flyRange, 15)
   assert.equal(pvp.leadTicks, 1)
   assert.equal(pvp.maxChains, 3)
 })
@@ -43,10 +44,11 @@ test('loadConfig mengisi pvp default saat config tidak menyebutnya', () => {
 
 test('loadConfig menormalkan angka pvp menjadi number', () => {
   const data = base()
-  data.combat = { pvp: { tickMs: '40', smashRange: '3', minFall: '1.2', clutchMinFall: '3', clutchHeight: '2', chargeRange: '14', leadTicks: '2' } }
+  data.combat = { pvp: { tickMs: '40', smashRange: '3', minFall: '1.2', clutchMinFall: '3', clutchHeight: '2', chargeRange: '14', flyRange: '18', leadTicks: '2' } }
   const config = loadConfig(writeConfig(data))
   assert.equal(config.combat.pvp.tickMs, 40)
   assert.equal(config.combat.pvp.chargeRange, 14)
+  assert.equal(config.combat.pvp.flyRange, 18)
   assert.equal(typeof config.combat.pvp.leadTicks, 'number')
 })
 

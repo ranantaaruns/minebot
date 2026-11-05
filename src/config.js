@@ -94,6 +94,7 @@ const DEFAULTS = {
       clutchMinFall: 3,
       clutchHeight: 1.8,
       chargeRange: 12,
+      flyRange: 15,
       leadTicks: 1,
       maxChains: 3
     },
@@ -372,7 +373,7 @@ function validate (config) {
     if (!isObject(config.combat.pvp)) {
       errors.push('combat.pvp harus berupa object')
     } else {
-      for (const key of ['tickMs', 'smashRange', 'minFall', 'clutchMinFall', 'clutchHeight', 'chargeRange', 'leadTicks']) {
+      for (const key of ['tickMs', 'smashRange', 'minFall', 'clutchMinFall', 'clutchHeight', 'chargeRange', 'flyRange', 'leadTicks']) {
         const value = Number(config.combat.pvp[key])
         if (!Number.isFinite(value) || value <= 0) {
           errors.push(`combat.pvp.${key} harus lebih dari 0`)
@@ -546,7 +547,7 @@ function loadConfig (configPath) {
       config.combat[key] = Number(config.combat[key])
     }
     if (isObject(config.combat.pvp)) {
-      for (const key of ['tickMs', 'smashRange', 'minFall', 'clutchMinFall', 'clutchHeight', 'chargeRange', 'leadTicks']) {
+      for (const key of ['tickMs', 'smashRange', 'minFall', 'clutchMinFall', 'clutchHeight', 'chargeRange', 'flyRange', 'leadTicks']) {
         config.combat.pvp[key] = Number(config.combat.pvp[key])
       }
     }

@@ -110,6 +110,45 @@ test('chargeAttack menolak target di deadzone', async () => {
   assert.equal(bot.attacks.length, 0)
 })
 
+test('engage menahan use item dengan spear (status charged)', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, {})
+  assert.equal(await flyer.engage(), true)
+  assert.equal(bot.activations, 1)
+  assert.equal(flyer.engaged, true)
+  assert.equal(await flyer.engage(), true)
+  assert.equal(bot.activations, 1, 'tidak dobel activate')
+})
+
+test('release melepas use item', async () => {
+  const bot = fakeBot()
+  let releases = 0
+  bot.deactivateItem = () => { releases++ }
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, {})
+  await flyer.engage()
+  flyer.release()
+  assert.equal(releases, 1)
+  assert.equal(flyer.engaged, false)
+})
+
+test('climbAway memakai pitch -15 derajat', async () => {
+  const bot = fakeBot()
+  bot.look = async (yaw, pitch) => { bot.pitchCall = [yaw, pitch] }
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, {})
+  flyer.climbAway()
+  await new Promise(r => setTimeout(r, 2))
+  assert.ok(Math.abs(bot.pitchCall[1] - (-15 * Math.PI / 180)) < 1e-6)
+})
+
+test('chargeAttack mempertahankan status engaged sebelum menyapu target', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, {})
+  const t = { position: new Vec3(20, 70, 0), velocity: new Vec3(0, 0, 0), height: 1.8 }
+  await flyer.chargeAttack(t)
+  assert.equal(flyer.engaged, true)
+  assert.equal(bot.activations, 1)
+})
+
 test('land memasang kembali chestplate', async () => {
   const bot = fakeBot()
   const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, {})

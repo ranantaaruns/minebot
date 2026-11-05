@@ -63,7 +63,8 @@ function canCharge (ctx) {
   if (ctx.elytraFlying) return ctx.distance <= CHARGE_RANGE * 2
   // Di udara tanpa glide: tetap kejar target supaya bisa meluncur/menukik.
   if (ctx.onGround !== true) return ctx.distance <= CHARGE_RANGE * 2.5
-  return ctx.distance <= CHARGE_RANGE
+  // Di tanah: kejar sampai radius 3x, supaya elytra bisa dilepas landas.
+  return ctx.distance <= CHARGE_RANGE * 3
 }
 
 function dist (a, b) {

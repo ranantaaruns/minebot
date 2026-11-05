@@ -39,6 +39,7 @@ class CombatEngine {
       smashRange: Number(pvp.smashRange) || 3.2,
       minFall: Number(pvp.minFall) || 1.5,
       chargeRange: Number(pvp.chargeRange) || 12,
+      flyRange: Number(pvp.flyRange) || 15,
       shieldPunishMs: Number(combat.hunt?.shieldBreakPunishMs) || 5000
     }
     this.enabled = this.settings.enabled
@@ -71,6 +72,7 @@ class CombatEngine {
     try { this.bot.removeListener?.('physicsTick', this.onTick) } catch {}
     try { this.bot.removeListener?.('death', this.onDeath) } catch {}
     this.clearTarget()
+    try { this.flyer.release() } catch {}
     return this
   }
 
@@ -234,18 +236,13 @@ class CombatEngine {
   async doFly (target, ctx) {
     this.busy = true
     try {
-      if (!this.flyer.flying) {
-        if (this.stats.flights === 0 || this.bot.entity?.onGround === true) {
-          if (!(await this.flyer.takeOff())) return
-          this.stats.flights++
-        }
-      }
       if (ctx.distance > this.settings.chargeRange) {
         await this.flyer.flyTo(this.aimPoint(target))
         return
       }
       const result = await this.flyer.chargeAttack(target)
       if (result?.ok) this.stats.charges++
+      else this.flyer.release()
     } finally {
       this.busy = false
     }
@@ -261,11 +258,18 @@ class CombatEngine {
   }
 
   async doCharge (target, ctx) {
-    if (!this.flyer.flying) return
     this.busy = true
     try {
+      // Target jauh (> flyRange) dan bot masih di tanah: buka elytra dulu.
+      if (!this.flyer.flying) {
+        if (ctx.distance <= this.settings.flyRange) return
+        if (!(await this.flyer.takeOff())) return
+        this.stats.flights++
+        return
+      }
       const result = await this.flyer.chargeAttack(target)
       if (result?.ok) this.stats.charges++
+      else this.flyer.release()
     } finally {
       this.busy = false
     }

@@ -70,6 +70,7 @@ mcbot>
 | `gamemode [mode]` | Lihat atau ubah gamemode bot (survival/creative/dll) |
 | `gather <item> <count>` | Kumpulkan material |
 | `attack <nama player> [--bot <id\|nama>]` | Cari dan bunuh player |
+| `combat [on\|off]` | Lihat / nyalakan mesin PvP udara (mace + elytra charge) |
 | `come [x y z]` | Datang ke owner / koordinat |
 | `follow` | Aktifkan auto-follow |
 | `say <teks>` | Kirim chat |
@@ -483,6 +484,22 @@ Bot tidak pernah menebak: kalau data darah lawan tidak tersedia atau pukulan ter
 Shield **tetap terangkat walaupun bot sedang memukul** — di Java pukulan tangan utama tidak memutus block off-hand, dan inilah yang membuat block sebelumnya sering bocor. Shield hanya diturunkan untuk aksi yang benar-benar butuh tangan kanan: makan dan memanah. Supaya tidak pernah "diam-diam mati", bot mengirim ulang state block setiap `refreshMs` dan mengangkatnya lagi setiap kali menerima `entityHurt`. Bot juga menghadapkan badannya ke lawan saat mengangkat shield, karena block hanya berlaku untuk serangan dari depan. Saat lari karena darah rendah shield diturunkan dulu supaya larinya cepat, lalu otomatis aktif lagi begitu bot kembali menyerang. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
 
 Saat mode multi-bot, `attack <nama player>` tanpa `--bot` mengirim semua bot yang online dan idle; `attack <nama player> --bot 2` hanya bot itu. CombatManager otomatis dimatikan selama job attack agar tidak menukar senjata di tengah tarikan panah, lalu dinyalakan lagi setelah job selesai.
+
+### Combo udara: mace smash dan elytra spear charge
+
+Bot punya mesin PvP berbasis FSM (`src/combat/`) yang hanya menyala saat perintah `attack <player>` berjalan — tidak pernah menyerang sendiri. Mesin ini dipasang di bot tunggal maupun di setiap bot swarm, dan bisa dimatikan tanpa menghentikan job lewat `combat off` (status + statistik tampil dengan `combat` saja).
+
+Tujuh slot hotbar disiapkan otomatis (`HotbarLoadout`): 0 mace, 1 spear/senjata terbaik, 2 wind charge, 3 firework, 4 kapak, 5 water bucket, 6 makanan. Slot zirah dada ditukar otomatis antara chestplate dan elytra sesuai state.
+
+**Mace smash.** Kalau target berada 4–10 blok dengan selisih tinggi −1..+2 dan tidak memblok, bot melompat, pada tick berikutnya membidik tegak ke bawah, memakai wind charge, lalu langsung pindah ke slot 0. Smash dieksekusi saat `velocity.y < 0`, `fallDistance >= 1.5`, dan jarak ≤ 3.2 blok; crosshair diarahkan ke **kepala target 1 tick ke depan** (ekstrapolasi linear). Kalau Wind Burst mendorong bot naik lagi, bot menahan crosshair dan mengulang smash di apogee berikutnya tanpa membuang wind charge tambahan (maksimal `maxChains`).
+
+`fallDistance` dihitung sendiri (`FallTracker`) karena Mineflayer tidak mengisinya untuk player. Kalau target keluar jangkauan sementara jarak ke tanah ≤ 1.8 blok dan sudah jatuh > 3 blok, bot memasang water bucket, membidik bawah, menuang, menunggu tepat satu tick fisika, lalu mengambilnya lagi.
+
+**Elytra charge.** Kalau target lebih dari `flyRange` (default 15 blok), bot memasang elytra, melompat, mengirim paket glide, lalu menembakkan firework saat kecepatan horizontal < 0.6 blok/tick. Selama mendekat bot **menahan** tombol use dengan spear (`engage`) agar status charge aktif. Titik bidik bukan pusat target: bot menghitung intersepsi tangensial (target bergerak ikut diperhitungkan) dan mengarahkan lintasan lewat samping pada radius 2.2–3.8 blok, karena spear **tidak memberi damage di bawah 2 blok** dan justru melukai bot sendiri. Setelah hit terdaftar, pitch dinaikkan ke −15° supaya tetap melayang di luar jangkauan balasan.
+
+**Perisai.** Kalau metadata target menunjukkan shielding dalam jarak kontak, combo dibatalkan dan bot beralih ke kapak (stun 5 detik) lalu kembali ke senjata utama — memakai `ShieldBreakStrategy` yang sama dengan serangan melee.
+
+Prioritas state: `clutch > shield > smash > burst > fly > launch > charge`. Semua perhitungan berjalan di listener `physicsTick`; `setTimeout` hanya dipakai sebagai jaring anti-macet kalau server berhenti mengirim tick. Item yang tidak ada di versi server (mis. spear belum ada di vanilla 1.21.4) otomatis dilewati dan diganti item terbaik berikutnya, jadi bot tidak error — hanya kehilangan teknik tersebut.
 
 ## Storage otomatis
 

@@ -2,7 +2,9 @@
 
 const { nextTick, startGlide } = require('./tick')
 const { TAGS } = require('./loadout')
-const { tangentialIntercept } = require('./charge')
+const { tangentialIntercept, POST_HIT_PITCH } = require('./charge')
+
+const DEG = Math.PI / 180
 
 class ElytraFlyer {
   constructor (bot, loadout, logger, options = {}) {
@@ -13,11 +15,13 @@ class ElytraFlyer {
       boostSpeed: 0.6,
       boostCooldownMs: 600,
       speed: 1.8,
+      flyRange: 15,
       touchdownY: null,
       ...options
     }
     this.stats = { takeoffs: 0, boosts: 0, charges: 0, hits: 0 }
     this.lastBoost = 0
+    this.engaged = false
   }
 
   get flying () {
@@ -64,6 +68,30 @@ class ElytraFlyer {
     return true
   }
 
+  // Tahan tombol use dengan spear: status "Engaged" pada charge attack.
+  async engage () {
+    if (this.engaged) return true
+    if (!(await this.loadout.select(TAGS.SPEAR))) return false
+    this.bot.activateItem()
+    this.engaged = true
+    return true
+  }
+
+  release () {
+    if (!this.engaged) return
+    this.engaged = false
+    try { this.bot.deactivateItem?.() } catch {}
+  }
+
+  // Setelah hit terdaftar: pitch -15 derajat supaya tetap melayang.
+  climbAway () {
+    const yaw = this.bot.entity?.yaw ?? 0
+    try {
+      const r = this.bot.look?.(yaw, POST_HIT_PITCH * DEG, true)
+      if (r && typeof r.catch === 'function') r.catch(() => {})
+    } catch {}
+  }
+
   async chargeAttack (target) {
     const bot = this.bot
     const computed = tangentialIntercept({
@@ -75,14 +103,23 @@ class ElytraFlyer {
       this.logger?.debug?.(`Charge dilewati: ${computed.reason}`)
       return computed
     }
-    await this.loadout.select(TAGS.SPEAR)
+    await this.engage()
     await bot.lookAt(computed.point, true)
     bot.attack(target)
     this.stats.charges++
+    // Sapuan kamera melewati bounding box lalu naik -15 derajat.
+    await bot.lookAt(this.aimCenter(target), true).catch(() => {})
+    this.climbAway()
     return computed
   }
 
+  aimCenter (target) {
+    const height = Number(target?.height) || 1.8
+    return target.position.offset(0, height * 0.5, 0)
+  }
+
   async land () {
+    this.release()
     return this.loadout.swapChest(TAGS.CHESTPLATE)
   }
 }
