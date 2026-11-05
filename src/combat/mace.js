@@ -99,13 +99,13 @@ class MaceSmasher {
   async lookStraightDown () {
     const bot = this.bot
     const yaw = bot.entity?.yaw ?? 0
-    // look() langsung menetapkan pitch +90° (straight down). lookAt() ke titik
-    // jauh di bawah memastikan pitch -90° (minecraft convention: +90 = down).
+    // look() pitch: -π/2 = straight down, +π/2 = straight up.
+    // lookAt() menghitung pitch = atan2(delta.y, groundDistance) -> -π/2 untuk bawah.
     if (typeof bot.look === 'function') {
-      await bot.look(yaw, Math.PI / 2, true)
+      await bot.look(yaw, -Math.PI / 2, true)
       return
     }
-    // Fallback: titik 100 blok di bawah kaki -> pitch mendekati +90°.
+    // Fallback: titik 100 blok di bawah kaki -> pitch -π/2.
     await bot.lookAt(bot.entity.position.offset(0, -100, 0), true)
   }
 

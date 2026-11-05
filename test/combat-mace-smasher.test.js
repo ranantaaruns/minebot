@@ -59,7 +59,7 @@ test('launch: lompat dulu, lalu pitch ke bawah, pakai wind charge, pindah ke slo
 
   assert.equal(bot.controls.jump, false, 'jump dilepas setelah 1 tick')
   assert.ok(bot.lookCalls.length >= 1)
-  assert.ok(Math.abs(bot.lookCalls[0][1] - Math.PI / 2) < 1e-6, 'pitch menghadap ke bawah')
+  assert.ok(Math.abs(bot.lookCalls[0][1] - (-Math.PI / 2)) < 1e-6, 'pitch menghadap ke bawah')
   assert.equal(bot.activations, 1, 'wind charge dipakai sekali')
   assert.equal(bot.quickBar, 0, 'kembali ke slot mace')
   assert.equal(mace.stats.launches, 1)
@@ -124,7 +124,7 @@ test('hasWindBurst membaca enchant mace dengan aman', () => {
   assert.equal(mace.hasWindBurst(), true)
 })
 
-test('launch memaksa pitch 90 derajat ke bawah sebelum wind charge', async () => {
+test('launch memaksa pitch -90 derajat (straight down) sebelum wind charge', async () => {
   const bot = fakeBot()
   const mace = new MaceSmasher(bot, new HotbarLoadout(bot, {}), silent, {})
   const p = mace.launch(target())
@@ -134,7 +134,7 @@ test('launch memaksa pitch 90 derajat ke bawah sebelum wind charge', async () =>
   bot.emit('physicsTick')
   await p
   assert.ok(bot.lookCalls.length >= 1)
-  assert.ok(Math.abs(bot.lookCalls[0][1] - Math.PI / 2) < 1e-6)
+  assert.ok(Math.abs(bot.lookCalls[0][1] - (-Math.PI / 2)) < 1e-6)
 })
 
 test('launch tidak mengirim release_use_item untuk wind charge', async () => {
