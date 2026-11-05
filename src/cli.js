@@ -34,6 +34,7 @@ Perintah yang tersedia:
   gamemode [mode]               Lihat atau ubah gamemode bot (survival/creative/dll)
   gather <item> [count]         Kumpulkan material (contoh: gather ancient_debris 4)
   attack <nama player>          Cari dan bunuh player (bow dipakai untuk jarak jauh)
+  combat [on|off]               Lihat/aktifkan mesin PvP udara (mace + elytra charge)
   come [x y z]                  Datang ke owner (atau koordinat tertentu)
   follow                        Aktifkan auto-follow owner
   say <teks>                    Kirim pesan ke chat server
@@ -184,6 +185,9 @@ class Cli {
         return this.handleGather(args)
       case 'attack':
         return this.handleAttack(args)
+      case 'combat':
+      case 'pvp':
+        return this.handleCombat(args)
       case 'come':
         return this.handleCome(args)
       case 'follow':
@@ -725,6 +729,28 @@ class Cli {
     const names = Object.keys(bot?.players || {}).filter(name => name.toLowerCase() !== username)
     const hint = names.length > 0 ? ` Pilihan: ${names.join(', ')}` : ' Belum ada player lain yang terlihat.'
     throw new Error(`Player "${target}" tidak ditemukan.${hint}`)
+  }
+
+  async handleCombat (args) {
+    const mode = String(args[0] || '').toLowerCase()
+    let enable = null
+    if (mode === 'on' || mode === 'aktif') enable = true
+    else if (mode === 'off' || mode === 'mati') enable = false
+    else if (mode) throw new Error('Gunakan: combat [on|off]')
+
+    const sessions = this.swarm ? this.swarm.getConnectedBots() : [this.session]
+    const lines = []
+    for (const s of sessions) {
+      const engine = s?.bot?.combatEngine
+      if (!engine) continue
+      if (enable !== null) engine.enabled = enable
+      const status = engine.enabled ? 'aktif' : 'nonaktif'
+      const st = engine.stats || {}
+      lines.push(`${s.bot.username || 'bot'}: ${status} (luncur ${st.launches || 0}, smash ${st.smashes || 0}, charge ${st.charges || 0}, clutch ${st.clutch || 0})`)
+    }
+    if (!lines.length) throw new Error('Bot belum terhubung atau engine PvP tidak tersedia')
+    for (const line of lines) this.logger.info(`Combat ${line}`)
+    return lines
   }
 
   async handleCome (args) {

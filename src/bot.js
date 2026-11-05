@@ -15,6 +15,8 @@ const { StorageManager } = require('./storage/manager')
 const { isNether, StructureAvoidance, ensureGoldArmor } = require('./safety/nether')
 const { LavaGuard } = require('./safety/lava')
 const { ArrowDodger } = require('./safety/dodge')
+const { ShieldBreakStrategy } = require('./safety/shieldbreak')
+const { CombatEngine } = require('./combat/engine')
 const { sleep } = require('./util/async')
 
 function craftingPlugin () {
@@ -171,6 +173,15 @@ async function createBot (config, logger) {
 
   bot.arrowDodger = new ArrowDodger(bot, config, logger)
   bot.arrowDodger.start()
+
+  bot.combatEngine = new CombatEngine(bot, config, logger, {
+    shieldBreak: new ShieldBreakStrategy({
+      enabled: config.combat?.hunt?.shieldBreakEnabled !== false,
+      punishMs: config.combat?.hunt?.shieldBreakPunishMs,
+      windowMs: config.combat?.hunt?.shieldBreakWindowMs
+    })
+  })
+  bot.combatEngine.start()
 
   return bot
 }

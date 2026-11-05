@@ -86,6 +86,17 @@ const DEFAULTS = {
     maxPursueDistance: 6,
     attackCooldownMs: 650,
     defendTimeoutMs: 12000,
+    pvp: {
+      enabled: true,
+      tickMs: 50,
+      smashRange: 3.2,
+      minFall: 1.5,
+      clutchMinFall: 3,
+      clutchHeight: 1.8,
+      chargeRange: 12,
+      leadTicks: 1,
+      maxChains: 3
+    },
     hunt: {
       meleeRange: 3.2,
       bowRange: 24,
@@ -358,6 +369,16 @@ function validate (config) {
         errors.push(`combat.${key} harus lebih dari 0`)
       }
     }
+    if (!isObject(config.combat.pvp)) {
+      errors.push('combat.pvp harus berupa object')
+    } else {
+      for (const key of ['tickMs', 'smashRange', 'minFall', 'clutchMinFall', 'clutchHeight', 'chargeRange', 'leadTicks']) {
+        const value = Number(config.combat.pvp[key])
+        if (!Number.isFinite(value) || value <= 0) {
+          errors.push(`combat.pvp.${key} harus lebih dari 0`)
+        }
+      }
+    }
     if (!isObject(config.combat.hunt)) {
       errors.push('combat.hunt harus berupa object')
     } else {
@@ -523,6 +544,11 @@ function loadConfig (configPath) {
   if (isObject(config.combat)) {
     for (const key of ['attackRange', 'detectRadius', 'maxPursueDistance', 'attackCooldownMs', 'defendTimeoutMs']) {
       config.combat[key] = Number(config.combat[key])
+    }
+    if (isObject(config.combat.pvp)) {
+      for (const key of ['tickMs', 'smashRange', 'minFall', 'clutchMinFall', 'clutchHeight', 'chargeRange', 'leadTicks']) {
+        config.combat.pvp[key] = Number(config.combat.pvp[key])
+      }
     }
     if (isObject(config.combat.hunt)) {
       for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs']) {

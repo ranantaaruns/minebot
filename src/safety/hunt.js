@@ -170,11 +170,15 @@ class PlayerHunter {
       await this._equipArmor()
       this.shield.setTarget(initial.entity)
       this.shield.start()
+      // Engine PvP hanya aktif di sini: serangan udara (mace/elytra) tidak
+      // pernah jalan tanpa perintah "attack".
+      this.bot.combatEngine?.setTarget(initial.entity)
       this.logger?.info(`Mulai menyerang ${target}`)
       return await this._loop(target, stats, cancellation, deadline, () => dead)
     } finally {
       this._stopPath()
       this.shield.stop()
+      this.bot.combatEngine?.clearTarget()
       try { this.bot.removeListener?.('entityDead', onDead) } catch {}
       try { this.bot.removeListener?.('path_update', onPath) } catch {}
     }
@@ -184,6 +188,9 @@ class PlayerHunter {
     while (true) {
       cancellation?.throwIfCancelled?.()
       if (isDead()) return this._result(target, stats, 'killed', true)
+      // Beri jalan pada manuver udara (mace smash / elytra charge) supaya
+      // serangan melee tidak bertabrakan dengan animasi yang sedang jalan.
+      if (this.bot.combatEngine?.busy) { await sleep(50, cancellation); continue }
       if (Date.now() > deadline) return this._result(target, stats, 'timeout')
       if (this.noPathCount >= Number(this.settings.maxNoPath || 3)) {
         return this._result(target, stats, 'unreachable')
