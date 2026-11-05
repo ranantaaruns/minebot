@@ -8,7 +8,7 @@ const path = require('path')
 class TrackerStore {
   constructor (dir, options = {}) {
     this.dir = dir
-    this.file = path.join(dir, 'players.json')
+    this.file = path.join(dir, options.file || 'players.json')
     this.debounceMs = Number(options.debounceMs) || 2000
     this.timer = null
     this.pending = null
