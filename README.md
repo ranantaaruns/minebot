@@ -71,6 +71,9 @@ mcbot>
 | `gather <item> <count>` | Kumpulkan material |
 | `attack <nama player> [--bot <id\|nama>]` | Cari dan bunuh player |
 | `combat [on\|off]` | Lihat / nyalakan mesin PvP udara (mace + elytra charge) |
+| `track [on\|off]` | Lihat/matikan pelacak koordinat player |
+| `track where <player>` | Koordinat terakhir + prediksi arah player |
+| `track export [file]` | Ekspor seluruh riwayat pelacakan ke JSON |
 | `come [x y z]` | Datang ke owner / koordinat |
 | `follow` | Aktifkan auto-follow |
 | `say <teks>` | Kirim chat |
@@ -500,6 +503,21 @@ Tujuh slot hotbar disiapkan otomatis (`HotbarLoadout`): 0 mace, 1 spear/senjata 
 **Perisai.** Kalau metadata target menunjukkan shielding dalam jarak kontak, combo dibatalkan dan bot beralih ke kapak (stun 5 detik) lalu kembali ke senjata utama — memakai `ShieldBreakStrategy` yang sama dengan serangan melee.
 
 Prioritas state: `clutch > shield > smash > burst > fly > launch > charge`. Semua perhitungan berjalan di listener `physicsTick`; `setTimeout` hanya dipakai sebagai jaring anti-macet kalau server berhenti mengirim tick. Item yang tidak ada di versi server (mis. spear belum ada di vanilla 1.21.4) otomatis dilewati dan diganti item terbaik berikutnya, jadi bot tidak error — hanya kehilangan teknik tersebut.
+
+### Pelacakan koordinat player
+
+Bot mencatat posisi setiap player yang dikirim server lewat paket entity tracking (`spawn_entity`, `sync_entity_position`, `entity_teleport`). Riwayat 64 sampel per player disimpan di `data/tracker/players-<nama bot>.json` (debounce tulis 2 detik, tulis atomik `.tmp` + rename), jadi koordinat tetap ada setelah bot restart.
+
+```
+track                 # daftar player terpantau + jarak/arah
+track where Steve     # detail + prediksi posisi
+track export out.json # ekspor mentah
+track off             # berhenti mencatat
+```
+
+Batas pentingnya: server hanya mengirim posisi player di dalam jangkauan entity-tracking (biasanya 2-5 chunk; di Paper diatur `entity-tracking-range.players`). Begitu player keluar jangkauan, Mineflayer mengirim `entityGone` dan data ditandai **prediksi** — bot mengekstrapolasi lurus dari kecepatan terakhir dan menampilkan radius ketidakpastian yang membesar (maksimal 64 blok). Angka prediksi bukan posisi sebenarnya.
+
+`intel.tracker.alertRadius` (default 32) memunculkan warning di log begitu player terpantau masuk radius; `intel.tracker.alertChat: true` juga mengirimnya ke chat server. `enabled: false` mematikan pencatatan sepenuhnya.
 
 ## Storage otomatis
 
