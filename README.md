@@ -513,6 +513,48 @@ Bot menghancurkan ore yang sudah dalam jangkauan tangan (≤ 4,3 blok) langsung 
 - `walkTimeoutMs` batas waktu berjalan ke blok yang belum terjangkau — kalau gagal, blok itu dilewati, bukan diulang terus.
 - `maxStalled` jumlah kegagalan beruntun pada blok yang sudah terjangkau sebelum job berhenti dengan alasan `unreachable`.
 
+## Menebang kayu: satu bot satu pohon, dari atas ke bawah
+
+Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot mengelompokkan blok kayu menjadi pohon (blok yang bersentuhan dianggap satu pohon), lalu:
+
+- Setiap bot mengklaim **satu pohon** lewat registry klaim yang dipakai bersama semua sesi bot dalam satu proses. Bot lain melewati pohon yang sudah diklaim, jadi swarm berpencar, bukan menyerbu satu pohon.
+- Dalam satu pohon, blok **tertinggi yang sudah terjangkau ditebang lebih dulu**, lalu turun ke bawah. Ini yang diminta untuk pohon besar seperti dark oak: tebang dari atas, bukan menggali bagian bawah dan meninggalkan puncak yang tidak terjangkau.
+- Kalau puncak masih di atas jangkauan (4,3 blok dari mata), bot menumpuk 1 blok (dirt/cobblestone atau log hasil tebangan sendiri) untuk mendekat, sampai `maxClimbs` kali.
+- Kalau sisa blok ada di samping (cabang), bot mencari posisi berdiri yang benar-benar kosong di sekitar blok lalu berjalan ke sana. Posisi berdiri ini juga dipakai saat menambang, sehingga trunk 2×2 dark oak tidak lagi gagal dengan `unreachable`.
+- Kalau satu pohon sudah habis, bot pindah ke pohon terdekat berikutnya yang belum diklaim, dan radius pencarian melebar otomatis (64 → 96 → 128 blok) kalau pohon di sekitar sudah habis.
+
+```json
+"gather": {
+  "tree": {
+    "enabled": true,
+    "scanRadius": 64,
+    "maxScanRadius": 128,
+    "minTreeSize": 4,
+    "maxEmptyTrees": 3,
+    "maxTreesPerJob": 64,
+    "maxClimbs": 6,
+    "maxFailures": 6,
+    "waitMs": 2000,
+    "climb": true
+  }
+}
+```
+
+- `enabled: false` mengembalikan perilaku lama (menambang blok kayu terdekat satu per satu).
+- `minTreeSize` membuat bot mendahulukan pohon utuh (≥ 4 log); pohon kecil tetap diambil kalau tidak ada yang besar.
+- `maxEmptyTrees` jumlah pohon gagal beruntun sebelum job berhenti dengan alasan `unreachable`; `maxFailures` jumlah blok gagal dalam satu pohon.
+- `waitMs` jeda tunggu kalau semua pohon di sekitar sedang diklaim bot lain.
+- `climb: false` melarang bot menumpuk blok untuk mencapai puncak (bot hanya menebang yang terjangkau).
+- Log progres muncul per pohon: `Bot <nama> menebang pohon <id> (n blok, tinggi h, jarak d blok)` dan `Pohon <id>: n log ditebang, progres x/y`.
+
+Kalau perintah dijalankan lewat swarm, sisa kuota yang belum terpenuhi dibagi lagi ke bot yang idle sampai `swarm.gatherRounds` putaran (default 2), jadi kekurangan tidak langsung dilaporkan sebagai "selesai sebagian" tanpa usaha kedua.
+
+```json
+"swarm": {
+  "gatherRounds": 2
+}
+```
+
 ## Membersihkan penghalang chest
 
 ```json

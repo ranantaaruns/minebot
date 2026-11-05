@@ -122,7 +122,9 @@ test('mining stops quickly and resets the pathfinder when blocks are unreachable
   assert.equal(result.reason, 'unreachable')
   assert.equal(result.mined, 0)
   assert.equal(bot.digs.length, 0)
-  assert.equal(bot.pathfinder.gotoCalls, 4, 'satu percobaan jalan per blok, bukan berulang-ulang')
+  // Dua tujuan per blok (GoalNear radius 1 lalu radius 2): radius 1 sering gagal
+  // pada trunk kayu 2x2 yang dikelilingi blok padat.
+  assert.equal(bot.pathfinder.gotoCalls, 8, 'maksimal dua percobaan jalan per blok, bukan berulang-ulang')
   assert.ok(bot.pathfinder.stops >= 1, 'pathfinder dihentikan agar tidak macet')
 })
 

@@ -6,6 +6,7 @@ const { applyMovements } = require('../movements')
 const { goToCave } = require('../navigation/cave')
 const { isNether } = require('../safety/nether')
 const { mineBlock, inReach } = require('./dig')
+const { gatherLogs, isLogName } = require('./tree')
 
 function hasSilkTouch (bot) {
   try {
@@ -87,6 +88,25 @@ async function mineItem (bot, mcData, materials, itemName, count, options = {}) 
 
   const ids = sourceBlockIds(mcData, source)
   if (ids.length === 0) return { mined: 0, reason: 'unknown-block' }
+
+  // Kayu memakai alur sendiri: satu bot satu pohon (klaim pohon dipakai bersama
+  // antar sesi bot) dan tebang dari puncak ke bawah, bukan blok acak terdekat.
+  if (isLogName(itemName) && source.blocks.every(name => isLogName(name))) {
+    const treeOptions = options.tree || {}
+    if (treeOptions.enabled !== false) {
+      return gatherLogs(bot, mcData, materials, itemName, count, {
+        ...options,
+        mineRadius,
+        mineYMin,
+        mineYMax,
+        protectOrigin,
+        protectRadius,
+        maxMinePerJob,
+        minHealth,
+        tree: treeOptions
+      })
+    }
+  }
 
   const wanted = count - before
   const searchCount = Math.min(128, Math.max(16, wanted * 4 + 8))

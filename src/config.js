@@ -173,7 +173,21 @@ const DEFAULTS = {
     preferCaves: true,
     caveRadius: 48,
     caveTravelTimeoutMs: 60000,
-    caveMinOreDistance: 16
+    caveMinOreDistance: 16,
+    tree: {
+      enabled: true,
+      scanRadius: 64,
+      maxScanRadius: 128,
+      scanCount: 512,
+      maxEmptyTrees: 3,
+      maxTreesPerJob: 64,
+      minTreeSize: 4,
+      waitMs: 2000,
+      gap: 1,
+      climb: true,
+      maxFailures: 6,
+      maxClimbs: 6
+    }
   },
   safety: {
     autoEat: true,
@@ -217,7 +231,8 @@ const DEFAULTS = {
   swarm: {
     staggerDelayMs: 1500,
     deliverOnGather: true,
-    tossDistance: 2.5
+    tossDistance: 2.5,
+    gatherRounds: 2
   }
 }
 

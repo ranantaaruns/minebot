@@ -58,78 +58,102 @@ class SwarmManager {
 
   async gather (item, count, cancellation) {
     const bare = String(item || '').replace(/^minecraft:/, '')
-    const activeBots = this.getConnectedBots().filter(s => !s.jobs.busy)
-
-    if (activeBots.length === 0) {
-      throw new Error('Tidak ada bot yang online dan idle untuk melakukan gather')
-    }
-
-    const quotas = partitionWorkload(count, activeBots.length)
-    const tasks = activeBots.map((session, idx) => ({
-      session,
-      quota: quotas[idx]
-    })).filter(t => t.quota > 0)
-
-    this.logger.info(`[Swarm] Memulai kolaborasi gather ${count} ${bare} dengan ${tasks.length} bot:`)
-    for (const t of tasks) {
-      this.logger.info(`  - ${t.session.username}: kuota ${t.quota} ${bare}`)
-    }
-
     const deliver = this.baseConfig.swarm?.deliverOnGather !== false
-
-    const results = await Promise.allSettled(tasks.map(async task => {
-      const { session, quota } = task
-      return session.jobs.run('gather', async jobCancel => {
-        session.owner?.pause()
-        session.bot.storageManager?.clearKeep()
-        session.bot.storageManager?.addKeep([bare])
-
-        try {
-          const materials = new MaterialManager(session.bot, session.config, session.logger, {
-            origin: session.bot.entity.position.floored()
-          })
-
-          const res = await materials.ensureItem(bare, quota, jobCancel)
-          const gathered = res.ok ? quota : (res.have || 0)
-
-          let delivered = 0
-          if (deliver && gathered > 0) {
-            const delRes = await deliverItemsToOwner(session, bare, gathered)
-            delivered = delRes.delivered
-          }
-
-          return {
-            bot: session.username,
-            ok: res.ok,
-            quota,
-            gathered,
-            delivered,
-            reason: res.reason
-          }
-        } finally {
-          session.bot.storageManager?.clearKeep()
-          try {
-            applyMovements(session.bot, 'travel', session.config.owner)
-          } catch {}
-          session.owner?.resume()
-        }
-      })
-    }))
+    // Kalau kuota belum terpenuhi, sisa kekurangan dibagi lagi ke bot yang idle.
+    const maxRounds = Math.max(1, Number(this.baseConfig.swarm?.gatherRounds) || 2)
 
     let totalGathered = 0
     let totalDelivered = 0
     const summary = []
+    let round = 0
 
-    for (let i = 0; i < results.length; i++) {
-      const res = results[i]
-      const botName = tasks[i].session.username
-      if (res.status === 'fulfilled' && res.value && !res.value.cancelled) {
-        totalGathered += (res.value.gathered || 0)
-        totalDelivered += (res.value.delivered || 0)
-        summary.push(`${botName}: ${res.value.gathered}/${tasks[i].quota}`)
+    while (round < maxRounds) {
+      round++
+      const needed = count - totalDelivered
+      if (needed <= 0) break
+
+      const activeBots = this.getConnectedBots().filter(s => !s.jobs.busy)
+      if (activeBots.length === 0) {
+        if (round === 1) {
+          throw new Error('Tidak ada bot yang online dan idle untuk melakukan gather')
+        }
+        this.logger.warn('[Swarm] Tidak ada bot idle untuk menutup kekurangan gather')
+        break
+      }
+
+      const quotas = partitionWorkload(needed, activeBots.length)
+      const tasks = activeBots.map((session, idx) => ({
+        session,
+        quota: quotas[idx]
+      })).filter(t => t.quota > 0)
+
+      if (round === 1) {
+        this.logger.info(`[Swarm] Memulai kolaborasi gather ${count} ${bare} dengan ${tasks.length} bot:`)
       } else {
-        const errReason = res.reason?.message || 'gagal'
-        summary.push(`${botName}: 0/${tasks[i].quota} (${errReason})`)
+        this.logger.info(`[Swarm] Putaran ${round}: kurang ${needed} ${bare}, dibagi ke ${tasks.length} bot:`)
+      }
+      for (const t of tasks) {
+        this.logger.info(`  - ${t.session.username}: kuota ${t.quota} ${bare}`)
+      }
+
+      const before = totalDelivered
+
+      const results = await Promise.allSettled(tasks.map(async task => {
+        const { session, quota } = task
+        return session.jobs.run('gather', async jobCancel => {
+          session.owner?.pause()
+          session.bot.storageManager?.clearKeep()
+          session.bot.storageManager?.addKeep([bare])
+
+          try {
+            const materials = new MaterialManager(session.bot, session.config, session.logger, {
+              origin: session.bot.entity.position.floored()
+            })
+
+            const res = await materials.ensureItem(bare, quota, jobCancel)
+            const gathered = res.ok ? quota : (res.have || 0)
+
+            let delivered = 0
+            if (deliver && gathered > 0) {
+              const delRes = await deliverItemsToOwner(session, bare, gathered)
+              delivered = delRes.delivered
+            }
+
+            return {
+              bot: session.username,
+              ok: res.ok,
+              quota,
+              gathered,
+              delivered,
+              reason: res.reason
+            }
+          } finally {
+            session.bot.storageManager?.clearKeep()
+            try {
+              applyMovements(session.bot, 'travel', session.config.owner)
+            } catch {}
+            session.owner?.resume()
+          }
+        })
+      }))
+
+      const label = round > 1 ? ` (putaran ${round})` : ''
+      for (let i = 0; i < results.length; i++) {
+        const res = results[i]
+        const botName = tasks[i].session.username
+        if (res.status === 'fulfilled' && res.value && !res.value.cancelled) {
+          totalGathered += (res.value.gathered || 0)
+          totalDelivered += (res.value.delivered || 0)
+          summary.push(`${botName}: ${res.value.gathered}/${tasks[i].quota}${label}`)
+        } else {
+          const errReason = res.reason?.message || 'gagal'
+          summary.push(`${botName}: 0/${tasks[i].quota}${label} (${errReason})`)
+        }
+      }
+
+      if (totalDelivered <= before) {
+        this.logger.warn(`[Swarm] Putaran ${round} tidak menambah hasil; berhenti mencoba`)
+        break
       }
     }
 

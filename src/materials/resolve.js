@@ -57,6 +57,8 @@ class MaterialManager {
       digTimeoutMs: overrides.digTimeoutMs ?? this.gatherDir.digTimeoutMs,
       walkTimeoutMs: overrides.walkTimeoutMs ?? this.gatherDir.walkTimeoutMs,
       maxStalled: overrides.maxStalled ?? this.gatherDir.maxStalled,
+      tree: overrides.tree ?? this.config.gather?.tree,
+      ownerId: overrides.ownerId ?? this.bot?.username,
       minHealth: this.config.safety.minHealth,
       movementOptions: {
         allowTower: this.config.owner?.allowTower !== false,
