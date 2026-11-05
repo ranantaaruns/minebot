@@ -128,7 +128,7 @@ class CombatEngine {
       smashRange: this.settings.smashRange,
       minFall: this.settings.minFall
     })
-    ctx.burst = this.burstPending
+    ctx.burst = this.burstPending && ctx.onGround !== true
     ctx.heightAbove = heightAboveGround(this.bot)
     ctx.clutch = shouldClutch({
       distance: ctx.distance,
@@ -218,19 +218,23 @@ class CombatEngine {
     try {
       await this.mace.smash(target)
       this.stats.smashes++
-      this.burstPending = this.mace.settings.chain !== false
+      // Wind Burst memberi lompatan gratis setelah hit pertama. Jangan buang
+      // wind charge untuk hit kedua; setelah hit kedua, momentum boleh
+      // dipulihkan dengan wind charge lagi saat bot kembali menapak.
+      const firstHit = this.mace.chainCount === 1
+      this.burstPending = firstHit && this.mace.settings.chain !== false && this.mace.hasWindBurst()
     } finally {
       this.busy = false
     }
   }
 
   async doBurst (target) {
-    if (!this.burstPending) return
-    if (this.mace.chainCount >= (this.mace.settings.maxChains || 3)) {
+    // Menunggu apogee: FSM akan memilih SMASH sendiri begitu velocity.y < 0,
+    // fallDistance cukup, dan target masuk jangkauan. Tidak attack di sini.
+    this.mace.trackBurst()
+    if (this.bot.entity?.onGround === true || this.mace.chainCount >= (this.mace.settings.maxChains || 3)) {
       this.burstPending = false
-      return
     }
-    await this.doSmash(target)
   }
 
   async doFly (target, ctx) {

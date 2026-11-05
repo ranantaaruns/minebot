@@ -192,3 +192,39 @@ test('busy menahan tick berikutnya (tidak dobel attack)', async () => {
   await engine.tick()
   assert.equal(bot.attacks.length, 0)
 })
+
+test('Wind Burst: setelah smash bot menunggu jatuh lagi, bukan spam attack saat naik', async () => {
+  const bot = fakeBot({ onGround: false, position: new Vec3(0, 66, 0) })
+  const engine = new CombatEngine(bot, {}, silent)
+  engine.mace.hasWindBurst = () => true
+  engine.setTarget(enemy(0, 64, 2))
+  bot.entity.velocity = new Vec3(0, -0.5, 0)
+  engine.fall.peakY = 68
+  await engine.tick()
+  assert.equal(bot.attacks.length, 1, 'smash pertama')
+  assert.equal(engine.burstPending, true)
+
+  bot.entity.velocity = new Vec3(0, 1.2, 0)
+  engine.fall.distance = 0
+  await engine.tick()
+  assert.equal(engine.state, STATES.BURST)
+  assert.equal(bot.attacks.length, 1, 'tidak menyerang saat sedang terlempar naik')
+
+  bot.entity.velocity = new Vec3(0, -0.6, 0)
+  engine.fall.peakY = 68
+  await engine.tick()
+  assert.equal(engine.state, STATES.SMASH)
+  assert.equal(bot.attacks.length, 2, 'smash kedua tanpa wind charge tambahan')
+  assert.equal(engine.burstPending, false, 'setelah hit kedua wind charge boleh dipakai lagi')
+})
+
+test('mace tanpa Wind Burst tidak membuat state BURST', async () => {
+  const bot = fakeBot({ onGround: false, position: new Vec3(0, 66, 0) })
+  const engine = new CombatEngine(bot, {}, silent)
+  engine.mace.hasWindBurst = () => false
+  engine.setTarget(enemy(0, 64, 2))
+  bot.entity.velocity = new Vec3(0, -0.5, 0)
+  engine.fall.peakY = 68
+  await engine.tick()
+  assert.equal(engine.burstPending, false)
+})

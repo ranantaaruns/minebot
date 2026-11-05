@@ -157,3 +157,61 @@ test('land memasang kembali chestplate', async () => {
   const names = bot.equipCalls.map(c => c[0])
   assert.deepEqual(names, ['elytra', 'netherite_chestplate'])
 })
+
+test('attackRun membuka elytra dulu saat masih di tanah', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, { runupDistance: 12 })
+  const t = { position: new Vec3(10, 70, 0), velocity: new Vec3(0, 0, 0), height: 1.8 }
+  const p = flyer.attackRun(t)
+  await new Promise(r => setTimeout(r, 5))
+  bot.emit('physicsTick')
+  await new Promise(r => setTimeout(r, 5))
+  bot.emit('physicsTick')
+  const result = await p
+  assert.equal(result.phase, 'takeoff')
+  assert.equal(bot.equipCalls[0][0], 'elytra')
+  assert.equal(flyer.stats.takeoffs, 1)
+  assert.equal(bot.attacks.length, 0)
+})
+
+test('attackRun menjauh dan memakai firework untuk mengumpulkan kecepatan', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, { runupDistance: 12, attackSpeed: 1.2 })
+  bot.entity.onGround = false
+  bot.entity.elytraFlying = true
+  bot.entity.position = new Vec3(0, 74, 0)
+  bot.entity.velocity = new Vec3(0.1, 0, 0)
+  const t = { position: new Vec3(8, 70, 0), velocity: new Vec3(0, 0, 0), height: 1.8 }
+  const result = await flyer.attackRun(t)
+  assert.equal(result.phase, 'runup')
+  assert.ok(bot.looks[0].x < -5, 'titik run-up berada di belakang bot, menjauh dari target')
+  assert.equal(bot.activations, 1, 'firework dipakai karena masih lambat')
+  assert.equal(bot.attacks.length, 0, 'belum menyerang saat kecepatan kurang')
+})
+
+test('attackRun menyerang saat kecepatan dan jarak memenuhi syarat', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, { runupDistance: 12, attackSpeed: 1 })
+  bot.entity.onGround = false
+  bot.entity.elytraFlying = true
+  bot.entity.position = new Vec3(0, 74, 0)
+  bot.entity.velocity = new Vec3(1.4, 0, 0)
+  const t = { position: new Vec3(3, 73, 0), velocity: new Vec3(0, 0, 0), height: 1.8 }
+  const result = await flyer.attackRun(t)
+  assert.equal(result.ok, true)
+  assert.equal(bot.attacks.length, 1)
+  assert.equal(flyer.engaged, true)
+})
+
+test('flyTo menghindari blok di depan dengan menaikkan titik terbang', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, { avoidance: true })
+  bot.entity.onGround = false
+  bot.entity.elytraFlying = true
+  bot.entity.position = new Vec3(0, 74, 0)
+  bot.entity.velocity = new Vec3(1, 0, 0)
+  bot.blockAt = p => (p.x > 1 && p.x < 3 && p.y <= 76 ? { name: 'stone' } : { name: 'air' })
+  await flyer.flyTo(new Vec3(20, 74, 0))
+  assert.ok(bot.looks[0].y > 76, 'pandangan diarahkan ke atas untuk melewati tembok')
+  assert.equal(flyer.stats.avoidances, 1)
+})

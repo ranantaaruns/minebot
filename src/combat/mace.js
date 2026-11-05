@@ -87,8 +87,30 @@ class MaceSmasher {
     })
   }
 
-  // Urutan sesuai spesifikasi: lompat -> 1 tick -> pitch 90° ke bawah ->
-  // wind charge -> pindah instan ke slot mace.
+  hasWindBurst () {
+    try {
+      const enchants = this.loadout.item(TAGS.MACE)?.enchants || []
+      return enchants.some(enchant => String(enchant?.name || '').replace(/^minecraft:/, '') === 'wind_burst')
+    } catch {
+      return false
+    }
+  }
+
+  async lookStraightDown () {
+    const bot = this.bot
+    const yaw = bot.entity?.yaw ?? 0
+    // look() langsung menetapkan pitch +90°. lookAt() pada titik tepat di bawah
+    // kaki bisa memakai eyeHeight dan menghasilkan sudut tidak tepat.
+    if (typeof bot.look === 'function') {
+      await bot.look(yaw, Math.PI / 2, true)
+      return
+    }
+    await bot.lookAt(bot.entity.position.offset(0, -2, 0), true)
+  }
+
+  // Urutan: lompat -> 1 tick -> pitch 90° ke bawah -> wind charge -> tunggu
+  // 1 tick agar use_item benar-benar diproses -> pindah ke slot mace.
+  // Jangan kirim deactivateItem: itu release_use_item untuk bow, bukan throw.
   async launch (target) {
     const bot = this.bot
     if (bot.entity?.onGround !== true) return false
@@ -100,12 +122,13 @@ class MaceSmasher {
     bot.setControlState('jump', true)
     await nextTick(bot, 1)
     bot.setControlState('jump', false)
-    await bot.lookAt(bot.entity.position.offset(0, -1, 0), true)
+    await this.lookStraightDown()
     bot.activateItem()
-    bot.deactivateItem?.()
+    await nextTick(bot, 1)
     await this.loadout.select(TAGS.MACE)
     this.stats.launches++
     this.chainCount = 0
+    this.burstActive = false
     return true
   }
 

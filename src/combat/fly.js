@@ -3,6 +3,7 @@
 const { nextTick, startGlide } = require('./tick')
 const { TAGS } = require('./loadout')
 const { tangentialIntercept, POST_HIT_PITCH } = require('./charge')
+const { horizontalSpeed, runupPoint, avoidancePoint, shouldStrike } = require('./flight')
 
 const DEG = Math.PI / 180
 
@@ -17,11 +18,18 @@ class ElytraFlyer {
       speed: 1.8,
       flyRange: 15,
       touchdownY: null,
+      runupDistance: 12,
+      attackSpeed: 1.2,
+      minStrikeSpeed: 0.9,
+      altitude: 4,
+      avoidance: true,
+      avoidanceDistance: 6,
       ...options
     }
-    this.stats = { takeoffs: 0, boosts: 0, charges: 0, hits: 0 }
+    this.stats = { takeoffs: 0, boosts: 0, charges: 0, hits: 0, avoidances: 0 }
     this.lastBoost = 0
     this.engaged = false
+    this.phase = 'idle'
   }
 
   get flying () {
@@ -59,16 +67,23 @@ class ElytraFlyer {
     return true
   }
 
-  async flyTo (point) {
+  async flyTo (point, options = {}) {
     const bot = this.bot
-    await bot.lookAt(point, true)
-    const speed = Math.hypot(bot.entity?.velocity?.x || 0, bot.entity?.velocity?.z || 0)
+    const safe = this.settings.avoidance
+      ? avoidancePoint(bot, point, { distance: this.settings.avoidanceDistance })
+      : { point, avoided: false }
+    if (safe.avoided) this.stats.avoidances++
+    await bot.lookAt(safe.point, true)
+    const speed = horizontalSpeed(bot.entity)
+    const targetSpeed = options.targetSpeed ?? this.settings.boostSpeed
     const cooled = Date.now() - this.lastBoost > this.settings.boostCooldownMs
-    if (speed < this.settings.boostSpeed && cooled) await this.boost()
+    const allowBoost = options.allowBoost !== false
+    if (!this.engaged && speed < targetSpeed && cooled && allowBoost) {
+      await this.boost()
+    }
     return true
   }
 
-  // Tahan tombol use dengan spear: status "Engaged" pada charge attack.
   async engage () {
     if (this.engaged) return true
     if (!(await this.loadout.select(TAGS.SPEAR))) return false
@@ -83,13 +98,44 @@ class ElytraFlyer {
     try { this.bot.deactivateItem?.() } catch {}
   }
 
-  // Setelah hit terdaftar: pitch -15 derajat supaya tetap melayang.
   climbAway () {
     const yaw = this.bot.entity?.yaw ?? 0
     try {
       const r = this.bot.look?.(yaw, POST_HIT_PITCH * DEG, true)
       if (r && typeof r.catch === 'function') r.catch(() => {})
     } catch {}
+  }
+
+  async attackRun (target) {
+    const bot = this.bot
+    if (bot.entity?.onGround === true || !this.flying) {
+      const ok = await this.takeOff()
+      this.phase = 'idle'
+      return { ok: false, phase: ok ? 'takeoff' : 'failed' }
+    }
+    const dist = bot.entity.position.distanceTo(target.position)
+    const speed = horizontalSpeed(bot.entity)
+    if (this.phase !== 'strike' && (dist > this.settings.runupDistance || speed < this.settings.attackSpeed)) {
+      this.phase = 'runup'
+      const point = runupPoint(
+        bot.entity.position,
+        target.position,
+        this.settings.runupDistance,
+        this.settings.altitude
+      )
+      await this.flyTo(point, { targetSpeed: this.settings.attackSpeed })
+      return { ok: false, phase: 'runup', speed }
+    }
+    this.phase = 'strike'
+    await this.engage()
+    // Hanya menyerang saat berada di dalam jangkauan spear (2.2–3.8 blok).
+    if (shouldStrike({ distance: dist, speed, minSpeed: this.settings.minStrikeSpeed })) {
+      const result = await this.chargeAttack(target)
+      return result
+    }
+    // Belum cukup dekat: luruskan ke titik tengah target, menunggu masuk range.
+    await this.flyTo(this.aimCenter(target), { allowBoost: false })
+    return { ok: false, phase: 'strike' }
   }
 
   async chargeAttack (target) {
@@ -107,7 +153,6 @@ class ElytraFlyer {
     await bot.lookAt(computed.point, true)
     bot.attack(target)
     this.stats.charges++
-    // Sapuan kamera melewati bounding box lalu naik -15 derajat.
     await bot.lookAt(this.aimCenter(target), true).catch(() => {})
     this.climbAway()
     return computed
