@@ -24,13 +24,16 @@ function nextTick (bot, count = 1, timeoutMs = 1000) {
 }
 
 // ID aksi start_fall_flying beda antar versi protokol
-// (1.20.x = 5, 1.21.4 = 8). Baca dari minecraft-data, jangan hardcode.
+// (1.20.x = 5, 1.21.4 = 8, 1.21.11 = 6). Baca dari minecraft-data, jangan hardcode.
+// Catatan: bot.elytraFly() bawaan mineflayer menulis 8 untuk 1.21.11 karena
+// feature 'entityActionUsesStringMapper' tidak ada di data versi ini, jadi
+// paket glide harus dikirim sendiri lewat startGlide().
 function fallFlyingActionId (mcData) {
   try {
     const packet = mcData?.protocol?.play?.toServer?.types?.packet_entity_action
     const mapper = packet?.[1]?.[1]?.type?.[1]?.mappings
     for (const [id, name] of Object.entries(mapper || {})) {
-      if (name === 'start_fall_flying') return Number(id)
+      if (name === 'start_fall_flying' || name === 'start_elytra_flying') return Number(id)
     }
   } catch {}
   return 8

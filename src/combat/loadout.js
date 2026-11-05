@@ -17,11 +17,17 @@ const TAGS = Object.freeze({
 
 const SLOT_ORDER = [TAGS.MACE, TAGS.SPEAR, TAGS.WIND_CHARGE, TAGS.FIREWORK, TAGS.AXE, TAGS.WATER, TAGS.FOOD]
 
-// Daftar prioritas: item pertama yang tersedia dipakai. Versi 1.21.4 tidak
-// punya spear, jadi charge jatuh ke pedang netherite (lihat resolveCapabilities).
+// Daftar prioritas: item pertama yang tersedia dipakai. Server 1.21.11 sudah
+// punya spear sungguhan (wooden..netherite) beserta enchant Lunge, jadi spear
+// jadi pilihan utama; pedang/trident hanya cadangan untuk versi tanpa spear
+// (lihat resolveCapabilities yang menyaring nama item sesuai versi server).
 const ITEM_RULES = Object.freeze({
   mace: ['mace'],
-  spear: ['spear', 'netherite_spear', 'diamond_spear', 'netherite_sword', 'diamond_sword', 'trident'],
+  spear: [
+    'netherite_spear', 'diamond_spear', 'iron_spear', 'copper_spear',
+    'stone_spear', 'golden_spear', 'wooden_spear',
+    'netherite_sword', 'diamond_sword', 'iron_sword', 'trident'
+  ],
   windCharge: ['wind_charge'],
   firework: ['firework_rocket'],
   axe: ['netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe', 'wooden_axe'],

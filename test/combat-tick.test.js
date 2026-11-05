@@ -61,3 +61,30 @@ test('startGlide fallback ke lompat ganda bila packet gagal', () => {
   assert.equal(ok, false)
   assert.equal(bot.controlStates.jump, false)
 })
+
+test('fallFlyingActionId membaca 6 dari minecraft-data 1.21.11', () => {
+  const mcData = require('minecraft-data')('1.21.11')
+  assert.equal(fallFlyingActionId(mcData), 6)
+})
+
+test('actionId 1.21.11 sama dengan encoding nama start_fall_flying', () => {
+  const { createSerializer } = require('minecraft-protocol')
+  const mcData = require('minecraft-data')('1.21.11')
+  const ser = createSerializer({ state: 'play', isServer: false, version: '1.21.11' })
+  const enc = actionId => ser.createPacketBuffer({
+    name: 'entity_action',
+    params: { entityId: 7, actionId, jumpBoost: 0 }
+  }).toString('hex')
+
+  // Menulis 8 (angka yang dipakai bot.elytraFly bawaan mineflayer) menghasilkan
+  // paket berbeda, artinya id harus dibaca dari data versi server.
+  assert.notEqual(enc(8), enc('start_fall_flying'))
+  assert.equal(enc(fallFlyingActionId(mcData)), enc('start_fall_flying'))
+})
+
+test('startGlide mengirim actionId sesuai versi server 1.21.11', () => {
+  const bot = fakeBot()
+  const mcData = require('minecraft-data')('1.21.11')
+  assert.equal(startGlide(bot, mcData), true)
+  assert.equal(bot.writes[0].payload.actionId, 6)
+})
