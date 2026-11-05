@@ -186,6 +186,15 @@ const DEFAULTS = {
       gap: 1,
       climb: true,
       removeScaffolds: false,
+      clearLeaves: true,
+      stuckMs: 20000,
+      collectDrops: true,
+      collectRadius: 12,
+      collectPerDropMs: 3000,
+      collectTimeoutMs: 20000,
+      maxDrops: 32,
+      replant: true,
+      replantRadius: 2,
       maxFailures: 6,
       maxClimbs: 6
     }

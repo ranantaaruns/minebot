@@ -1,9 +1,18 @@
 'use strict'
 
+const Vec3 = require('vec3')
+const { goals } = require('mineflayer-pathfinder')
 const { countItemName } = require('../util/inventory')
-const { mineBlock, inReach, REACH } = require('./dig')
+const { sleep, withTimeout } = require('../util/async')
+const { mineBlock, inReach, isPassableBlock, REACH } = require('./dig')
 
 const LOG_SUFFIX_RE = /_(log|wood|stem)$/
+const LEAF_SUFFIX_RE = /_(leaves|wart_block)$/
+
+const SOIL_NAMES = [
+  'grass_block', 'dirt', 'coarse_dirt', 'podzol', 'rooted_dirt', 'moss_block',
+  'pale_moss_block', 'mycelium', 'mud', 'dirt_path', 'soul_soil'
+]
 
 function bareName (name) {
   return String(name || '').replace(/^minecraft:/, '').toLowerCase()
@@ -11,6 +20,24 @@ function bareName (name) {
 
 function isLogName (name) {
   return LOG_SUFFIX_RE.test(bareName(name))
+}
+
+function isLeafName (name) {
+  return LEAF_SUFFIX_RE.test(bareName(name))
+}
+
+// Sapling untuk sebuah log: dark_oak_log -> dark_oak_sapling. Jamur Nether
+// memakai _fungus, bukan _sapling.
+function saplingNameFor (name) {
+  const base = bareName(name)
+  if (!base) return null
+  if (/_stem$/.test(base)) return `${base.replace(/_stem$/, '')}_fungus`
+  const stripped = base.replace(/_(log|wood)$/, '')
+  return stripped ? `${stripped}_sapling` : null
+}
+
+function isSoil (block) {
+  return !!block && SOIL_NAMES.includes(bareName(block.name))
 }
 
 function blockKey (pos) {
@@ -232,6 +259,265 @@ function discoverTrees (bot, ids, options = {}) {
     .filter(tree => !exclude || !exclude.has(tree.id))
 }
 
+// --- Daun --------------------------------------------------------------
+// Kanopi dark oak menutupi log bagian dalam: bot bisa "melihat" log itu tapi
+// tidak bisa menjangkaunya karena terhalang/tidak ada jalur. Daun di garis
+// pandang dibuka dulu, jadi log di dalam pohon tetap bisa ditebang.
+
+function lineLeafBlocks (bot, target, options = {}) {
+  const from = bot?.entity?.position
+  const to = target?.position
+  if (!from || !to) return []
+  const step = Number(options.step) || 0.25
+  const eye = from.offset(0, 1.62, 0)
+  const end = to.offset(0.5, 0.5, 0.5)
+  const steps = Math.max(1, Math.ceil(eye.distanceTo(end) / step))
+  const seen = new Set()
+  const out = []
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps
+    const point = eye.offset(
+      (end.x - eye.x) * t,
+      (end.y - eye.y) * t,
+      (end.z - eye.z) * t
+    ).floored()
+    const key = blockKey(point)
+    if (seen.has(key)) continue
+    seen.add(key)
+    const found = typeof bot.blockAt === 'function' ? bot.blockAt(point) : null
+    if (found && isLeafName(found.name)) out.push(found)
+  }
+  return out
+}
+
+async function clearLeafPath (bot, target, options = {}) {
+  const { logger, maxLeaves = 8 } = options
+  const leaves = lineLeafBlocks(bot, target, options).slice(0, maxLeaves)
+  let cleared = 0
+  let failed = 0
+  for (const leaf of leaves) {
+    const res = await mineBlock(bot, leaf, options)
+    if (res.ok) {
+      cleared++
+      continue
+    }
+    failed++
+    logger?.debug?.(`Gagal membuka daun di ${blockKey(leaf.position)}: ${res.reason}`)
+    if (failed >= 3) break
+  }
+  return cleared
+}
+
+// Daun yang mengurung bot (bot berhenti di tengah kanopi dan tidak bisa jalan).
+async function clearLeavesAround (bot, options = {}) {
+  const { logger, maxLeaves = 4 } = options
+  const feet = bot?.entity?.position
+  if (!feet || typeof bot.blockAt !== 'function') return 0
+  const base = feet.floored()
+  const found = []
+  for (let dx = -2; dx <= 2; dx++) {
+    for (let dy = -1; dy <= 2; dy++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        if (dx === 0 && dy === 0 && dz === 0) continue
+        const block = bot.blockAt(base.offset(dx, dy, dz))
+        if (!block || !isLeafName(block.name)) continue
+        if (!inReach(bot, block)) continue
+        found.push(block)
+      }
+    }
+  }
+  let cleared = 0
+  for (const leaf of found.slice(0, maxLeaves)) {
+    const res = await mineBlock(bot, leaf, options)
+    if (res.ok) cleared++
+  }
+  if (cleared > 0) logger?.debug?.(`Membuka ${cleared} blok daun di sekitar bot`)
+  return cleared
+}
+
+// Berhenti memaksa jalan (pathfinder kadang berputar di tempat) lalu lompat
+// supaya bot lepas dari blok yang menyangkut.
+async function unstick (bot, options = {}) {
+  try { bot.pathfinder?.stop?.() } catch {}
+  try {
+    bot.setControlState?.('jump', true)
+    await sleep(180)
+    bot.setControlState?.('jump', false)
+  } catch {}
+  if (options.clearLeaves !== false) {
+    await clearLeavesAround(bot, options)
+  }
+}
+
+// --- Drop di tanah -----------------------------------------------------
+// Log yang sudah hancur jatuh sebagai item entity. inventory baru bertambah
+// setelah bot mendekat, jadi drop harus diambil sebelum progres dihitung.
+
+function droppedItemOf (entity) {
+  try {
+    if (typeof entity?.getDroppedItem === 'function') return entity.getDroppedItem()
+  } catch {}
+  return null
+}
+
+function nearbyDrops (bot, options = {}) {
+  const self = bot?.entity?.position
+  if (!self) return []
+  const radius = Number(options.radius) || 16
+  const ids = options.ids || null
+  const out = []
+  for (const entity of Object.values(bot.entities || {})) {
+    if (!entity || !entity.position || entity === bot.entity) continue
+    const item = droppedItemOf(entity)
+    if (!item) continue
+    if (ids && ids.size > 0) {
+      const type = item.type ?? item.itemId ?? item.id
+      if (type !== undefined && !ids.has(type)) continue
+    }
+    if (entity.position.distanceTo(self) > radius) continue
+    out.push(entity)
+  }
+  return out.sort((a, b) => a.position.distanceTo(self) - b.position.distanceTo(self))
+}
+
+async function collectDrops (bot, mcData, options = {}) {
+  const {
+    itemNames = [],
+    radius = 16,
+    maxDrops = 32,
+    perDropMs = 3000,
+    timeoutMs = 20000,
+    logger,
+    cancellation
+  } = options
+
+  const ids = new Set()
+  for (const name of itemNames) {
+    if (!name) continue
+    const id = mcData?.itemsByName?.[bareName(name)]?.id
+    if (id !== undefined) ids.add(id)
+  }
+
+  if (typeof bot?.pathfinder?.goto !== 'function') return 0
+  const deadline = Date.now() + timeoutMs
+  let visited = 0
+
+  while (visited < maxDrops && Date.now() < deadline) {
+    cancellation?.throwIfCancelled?.()
+    const drops = nearbyDrops(bot, { radius, ids })
+    if (drops.length === 0) break
+    const drop = drops[0]
+    visited++
+    try {
+      await withTimeout(
+        bot.pathfinder.goto(new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 0)),
+        perDropMs,
+        'Mengambil drop timeout'
+      )
+    } catch {
+      // drop di tempat yang tidak terjangkau: lanjut ke drop berikutnya
+    }
+    await sleep(120)
+  }
+
+  if (visited > 0) logger?.debug?.(`Mengambil ${visited} drop di sekitar pohon`)
+  return visited
+}
+
+// --- Menanam ulang ----------------------------------------------------
+// Sapling ikut jatuh saat daun ditebang, jadi setelah satu pohon habis bot
+// menanamnya kembali. Dark oak butuh 4 sapling dalam kotak 2x2 supaya tumbuh.
+
+function trunkWidth (tree) {
+  const blocks = tree?.blocks || []
+  if (blocks.length === 0) return 1
+  const base = Math.min(...blocks.map(pos => pos.y))
+  const rings = blocks.filter(pos => pos.y === base)
+  if (rings.length < 4) return 1
+  const xs = new Set(rings.map(pos => pos.x))
+  const zs = new Set(rings.map(pos => pos.z))
+  return xs.size >= 2 && zs.size >= 2 ? 2 : 1
+}
+
+function plantGroups (bot, tree, options = {}) {
+  const size = Number(options.size) || 1
+  const radius = Number(options.radius) || 2
+  const blocks = tree?.blocks || []
+  if (blocks.length === 0 || typeof bot?.blockAt !== 'function') return []
+  const baseY = Math.min(...blocks.map(pos => pos.y))
+  const baseCells = blocks.filter(pos => pos.y === baseY)
+
+  const groups = []
+  const seen = new Set()
+  for (const cell of baseCells) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        const corner = cell.offset(dx, 0, dz)
+        const key = `${corner.x},${corner.z}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const cells = []
+        let valid = true
+        for (let ax = 0; ax < size && valid; ax++) {
+          for (let az = 0; az < size && valid; az++) {
+            const spot = corner.offset(ax, 0, az)
+            const ground = bot.blockAt(spot.offset(0, -1, 0))
+            if (!isSoil(ground)) { valid = false; break }
+            if (!isPassableBlock(bot.blockAt(spot))) { valid = false; break }
+            if (!isPassableBlock(bot.blockAt(spot.offset(0, 1, 0)))) { valid = false; break }
+            cells.push({ ground, spot })
+          }
+        }
+        if (valid && cells.length === size * size) groups.push(cells)
+      }
+    }
+  }
+  return groups
+}
+
+async function replantTree (bot, mcData, tree, itemName, options = {}) {
+  const { logger, replantRadius = 2, walkTimeoutMs = 6000 } = options
+  const saplingName = saplingNameFor(itemName)
+  if (!saplingName) return { planted: 0, reason: 'no-sapling-type' }
+  if (!mcData?.itemsByName?.[saplingName]) return { planted: 0, reason: 'no-sapling-type' }
+
+  const size = trunkWidth(tree) === 2 ? 2 : 1
+  const need = size * size
+  const have = countItemName(bot, mcData, saplingName)
+  if (have < need) return { planted: 0, sapling: saplingName, reason: 'not-enough-saplings' }
+
+  const groups = plantGroups(bot, tree, { size, radius: replantRadius })
+  if (groups.length === 0) return { planted: 0, sapling: saplingName, reason: 'no-soil' }
+
+  let planted = 0
+  const group = groups[0]
+  for (const { ground, spot } of group) {
+    const { findItemName } = require('../util/inventory')
+    const item = findItemName(bot, mcData, saplingName)
+    if (!item) break
+    try {
+      if (!inReach(bot, ground) && typeof bot.pathfinder?.goto === 'function') {
+        await withTimeout(
+          bot.pathfinder.goto(new goals.GoalNear(spot.x, spot.y, spot.z, 1)),
+          walkTimeoutMs,
+          'Menuju titik tanam timeout'
+        )
+      }
+      await bot.equip(item, 'hand')
+      await bot.placeBlock(ground, new Vec3(0, 1, 0))
+      planted++
+    } catch (err) {
+      logger?.debug?.(`Gagal menanam sapling di ${blockKey(spot)}: ${err?.message || err}`)
+      break
+    }
+  }
+
+  if (planted > 0) {
+    logger?.info(`Menanam ${planted} sapling ${saplingName} di bekas pohon ${tree.id}`)
+  }
+  return { planted, sapling: saplingName, size }
+}
+
 // Naik satu blok dengan menumpuk blok (dipakai kalau puncak pohon di luar
 // jangkauan). Blok hasil tebangan sendiri boleh dipakai sebagai penopang.
 async function climbOne (bot, mcData, options = {}) {
@@ -243,6 +529,24 @@ async function climbOne (bot, mcData, options = {}) {
   }
   if (typeof bot?.placeBlock !== 'function') return { ok: false, reason: 'no-place' }
 
+  // Daun tepat di atas kepala menghalangi penumpukan blok (pillarUp melewati
+  // kolom yang tidak kosong). Buka dulu supaya bot tetap bisa naik ke puncak.
+  let leaves = 0
+  if (options.clearLeaves !== false && typeof bot.blockAt === 'function') {
+    const feet = bot.entity.position.floored()
+    for (const dy of [1, 2]) {
+      const block = bot.blockAt(feet.offset(0, dy, 0))
+      if (!block || !isLeafName(block.name)) continue
+      if (!inReach(bot, block)) continue
+      const res = await mineBlock(bot, block, {
+        logger: options.logger,
+        digTimeoutMs: options.digTimeoutMs,
+        walkTimeoutMs: options.walkTimeoutMs
+      })
+      if (res.ok) leaves++
+    }
+  }
+
   const targetY = bot.entity.position.y + 2
   try {
     const res = await pillarUp(bot, targetY, {
@@ -253,7 +557,7 @@ async function climbOne (bot, mcData, options = {}) {
       maxBlocks: 2
     })
     const placed = res?.placed?.length || 0
-    return { ok: placed > 0, placed, positions: res?.placed || [], reason: res?.reason }
+    return { ok: placed > 0, placed, leaves, positions: res?.placed || [], reason: res?.reason }
   } catch (err) {
     return { ok: false, reason: err?.message || 'climb-failed' }
   }
@@ -275,11 +579,22 @@ async function chopTree (bot, mcData, tree, options = {}) {
     maxClimbs = 6,
     climb = true,
     removeScaffolds = false,
+    clearLeaves = true,
+    stuckMs = 20000,
     ownerId = null,
     claims = null
   } = options
 
-  const stats = { chopped: 0, blocks: 0, climbs: 0, skipped: 0, scaffolds: [], reason: null }
+  const stats = {
+    chopped: 0,
+    blocks: 0,
+    climbs: 0,
+    skipped: 0,
+    leaves: 0,
+    gone: 0,
+    scaffolds: [],
+    reason: null
+  }
   if (!tree || !tree.blocks?.length) {
     stats.reason = 'empty-tree'
     return stats
@@ -287,6 +602,8 @@ async function chopTree (bot, mcData, tree, options = {}) {
 
   let remaining = orderTopDown(tree.blocks, bot.entity.position)
   const failed = new Set()
+  const leafTries = new Map()
+  let lastProgressAt = Date.now()
 
   while (remaining.length > 0 && stats.blocks < maxBlocks) {
     cancellation?.throwIfCancelled?.()
@@ -296,37 +613,89 @@ async function chopTree (bot, mcData, tree, options = {}) {
       break
     }
 
+    // Blok yang sudah tidak ada (ditebang bot lain, atau ikut roboh) bukan
+    // kegagalan. Dulu blok seperti ini tetap dianggap "masih ada di pohon",
+    // jadi bot menunggu di satu tempat padahal lognya sudah jadi drop di tanah.
+    const alive = remaining.filter(pos => {
+      const found = bot.blockAt(pos)
+      return !!found && isLogName(found.name)
+    })
+    if (alive.length !== remaining.length) {
+      stats.gone += remaining.length - alive.length
+      remaining = alive
+      if (remaining.length === 0) break
+    }
+
+    // Bot tidak menebang apa pun dalam stuckMs: biasanya tersangkut di dalam
+    // kanopi. Buka daun di sekitarnya, jangan berdiri diam sampai timeout.
+    if (Date.now() - lastProgressAt > stuckMs) {
+      stats.stuck = (stats.stuck || 0) + 1
+      const cleared = await clearLeavesAround(bot, {
+        logger, cancellation, digTimeoutMs, walkTimeoutMs, maxLeaves: 6
+      })
+      await unstick(bot, { clearLeaves: false })
+      logger?.debug(`Bot tidak bergerak ${Math.round(stuckMs / 1000)}s di pohon ${tree.id}; membuka ${cleared} daun`)
+      if (cleared === 0 && stats.stuck >= 2) {
+        stats.reason = 'stuck'
+        break
+      }
+      lastProgressAt = Date.now()
+      continue
+    }
+
     const reachable = remaining.find(pos => {
+      if (failed.has(blockKey(pos))) return false
       const block = bot.blockAt(pos)
-      return block && inReach(bot, block)
+      return !!block && inReach(bot, block)
     })
 
     if (reachable) {
       const block = bot.blockAt(reachable)
+      const key = blockKey(reachable)
       const dug = await mineBlock(bot, block, { logger, digTimeoutMs, walkTimeoutMs })
-      remaining = remaining.filter(pos => blockKey(pos) !== blockKey(reachable))
       if (dug.ok) {
+        remaining = remaining.filter(pos => blockKey(pos) !== key)
+        failed.delete(key)
         stats.blocks++
         stats.chopped++
-      } else {
-        failed.add(blockKey(reachable))
-        stats.skipped++
-        logger?.debug(`Gagal menebang ${reachable} (${dug.reason})`)
-        if (failed.size >= maxFailures) {
-          stats.reason = dug.reason || 'unreachable'
-          break
+        lastProgressAt = Date.now()
+        continue
+      }
+
+      // Gagal menjangkau blok: penyebab tersering adalah daun kanopi yang
+      // menutup jalan. Buka daun di garis pandang, lalu coba blok yang sama.
+      const tries = leafTries.get(key) || 0
+      if (clearLeaves && tries < 2) {
+        leafTries.set(key, tries + 1)
+        const cleared = await clearLeafPath(bot, block, {
+          logger, cancellation, digTimeoutMs, walkTimeoutMs
+        })
+        if (cleared > 0) {
+          stats.leaves += cleared
+          lastProgressAt = Date.now()
+          continue
         }
       }
+
+      failed.add(key)
+      stats.skipped++
+      logger?.debug(`Gagal menebang ${reachable} (${dug.reason})`)
+      if (failed.size >= maxFailures) {
+        stats.reason = dug.reason || 'unreachable'
+        break
+      }
+      await unstick(bot, { logger, cancellation, digTimeoutMs, walkTimeoutMs })
       continue
     }
 
     // Tidak ada blok yang bisa dijangkau sekarang.
-    const highest = remaining[0]
+    const highest = remaining.find(pos => !failed.has(blockKey(pos))) || remaining[0]
     const feetY = bot.entity.position.y
     if (climb && highest.y >= feetY + 4 && stats.climbs < maxClimbs) {
       const up = await climbOne(bot, mcData, { ...options, cancellation, logger })
       if (up.ok) {
         stats.climbs++
+        stats.leaves += up.leaves || 0
         if (up.positions?.length) stats.scaffolds.push(...up.positions)
         logger?.debug(`Menumpuk ${up.placed} blok untuk mencapai puncak pohon di y=${highest.y}`)
         continue
@@ -365,12 +734,26 @@ async function chopTree (bot, mcData, tree, options = {}) {
 
     if (dug.ok) {
       remaining = remaining.filter(pos => blockKey(pos) !== blockKey(target))
+      failed.delete(blockKey(target))
       stats.blocks++
       stats.chopped++
+      lastProgressAt = Date.now()
       continue
     }
 
-    failed.add(blockKey(target))
+    const targetKey = blockKey(target)
+    if (clearLeaves && (leafTries.get(targetKey) || 0) < 2) {
+      leafTries.set(targetKey, (leafTries.get(targetKey) || 0) + 1)
+      const cleared = await clearLeafPath(bot, block || { position: target }, {
+        logger, cancellation, digTimeoutMs, walkTimeoutMs
+      })
+      if (cleared > 0) {
+        stats.leaves += cleared
+        lastProgressAt = Date.now()
+        continue
+      }
+    }
+    failed.add(targetKey)
     stats.skipped++
     logger?.debug(`Gagal menebang ${target} (${dug.reason})`)
     if (failed.size >= maxFailures) {
@@ -438,6 +821,9 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
   let chopped = 0
   let choppedTrees = 0
   let emptyTrees = 0
+  let collectedDrops = 0
+  let replantedTrees = 0
+  let plantedSaplings = 0
   let have = before
   let reason = null
 
@@ -530,6 +916,8 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
       scaffoldBlocks,
       climb: tree.climb !== false,
       removeScaffolds: tree.removeScaffolds === true,
+      clearLeaves: tree.clearLeaves !== false,
+      stuckMs: Number(tree.stuckMs) || undefined,
       maxFailures: Number(tree.maxFailures) || undefined,
       maxClimbs: Number(tree.maxClimbs) || undefined
     })
@@ -552,6 +940,37 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
       }
     }
 
+    // Log yang hancur jatuh sebagai item di tanah. Tanpa diambil, inventory
+    // tidak bertambah sehingga bot merasa masih kurang dan terus mencari pohon
+    // baru sementara tumpukan log tertinggal di tanah.
+    if (tree.collectDrops !== false) {
+      const drops = await collectDrops(bot, mcData, {
+        itemNames: [itemName, saplingNameFor(itemName)].filter(Boolean),
+        radius: Number(tree.collectRadius) || 12,
+        maxDrops: Number(tree.maxDrops) || 32,
+        perDropMs: Number(tree.collectPerDropMs) || 3000,
+        timeoutMs: Number(tree.collectTimeoutMs) || 20000,
+        logger,
+        cancellation
+      })
+      collectedDrops += drops
+    }
+
+    // Tanam kembali sapling di bekas pohon supaya hutan tidak habis.
+    if (tree.replant !== false) {
+      const replanted = await replantTree(bot, mcData, chopping, itemName, {
+        logger,
+        cancellation,
+        replantRadius: Number(tree.replantRadius) || 2
+      })
+      if (replanted.planted > 0) {
+        replantedTrees++
+        plantedSaplings += replanted.planted
+      } else if (result.chopped > 0) {
+        logger?.debug(`Tidak menanam ulang pohon ${chopping.id}: ${replanted.reason}`)
+      }
+    }
+
     have = countItemName(bot, mcData, itemName)
     logger?.info(`Pohon ${chopping.id}: ${result.chopped} log ditebang, progres ${have}/${count}`)
 
@@ -568,13 +987,32 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
   }
 
   have = countItemName(bot, mcData, itemName)
-  const out = { mined: have - before, have, blocks: chopped, trees: choppedTrees }
+  const out = {
+    mined: have - before,
+    have,
+    blocks: chopped,
+    trees: choppedTrees,
+    drops: collectedDrops,
+    replanted: replantedTrees,
+    saplings: plantedSaplings
+  }
   if (have < count && reason) out.reason = reason
   return out
 }
 
 module.exports = {
   isLogName,
+  isLeafName,
+  saplingNameFor,
+  lineLeafBlocks,
+  clearLeafPath,
+  clearLeavesAround,
+  unstick,
+  nearbyDrops,
+  collectDrops,
+  plantGroups,
+  trunkWidth,
+  replantTree,
   blockKey,
   clusterLogs,
   summarizeTree,

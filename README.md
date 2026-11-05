@@ -543,6 +543,11 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
 - Kalau puncak masih di atas jangkauan (4,3 blok dari mata), bot menumpuk blok (dirt/cobblestone lebih dulu, log hasil tebangan sendiri sebagai pilihan terakhir) untuk mendekat, sampai `maxClimbs` kali. Setelah puncak habis dan sisa batang ada di bawah, bot membongkar tumpukannya sendiri lalu turun, jadi batang bawah ikut ditebang — bukan ditinggal karena terlalu jauh di bawah kaki.
 - Kalau sisa blok ada di samping (cabang), bot mencari posisi berdiri yang benar-benar kosong di sekitar blok lalu berjalan ke sana. Posisi berdiri ini juga dipakai saat menambang, sehingga trunk 2×2 dark oak tidak lagi gagal dengan `unreachable`.
 - Kalau satu pohon sudah habis, bot pindah ke pohon terdekat berikutnya yang belum diklaim. Blok pohon kandidat dicek ulang sebelum ditebang (pohon bisa sudah dihabisi bot lain), dan radius pencarian melebar otomatis (48 → 72 → 108 → 128 blok) kalau pohon di sekitar sudah habis.
+- **Menembus daun**: log dark oak sering tertutup kanopi. Kalau sebuah log gagal dijangkau, bot menelusuri garis pandang dari matanya ke blok itu dan menebang blok daun yang menghalangi (maksimal 8 daun, 2 percobaan per blok), lalu mencoba log yang sama lagi. Kalau bot benar-benar berhenti di dalam kanopi, blok daun di sekitarnya ikut dibuka (`clearLeavesAround`) sebelum bot menyerah.
+- **Log di tanah diambil dulu**: log yang hancur jatuh sebagai item. Bot mendekati setiap drop log/sapling dalam `collectRadius` sebelum menghitung progres, karena inventory baru bertambah setelah item terangkat. Tanpa ini bot merasa masih kurang dan terus mencari pohon baru sementara tumpukan log tertinggal di tanah.
+- **Blok hantu tidak lagi memblokir bot**: blok yang sudah tidak ada di dunia dibuang dari daftar sisa pohon (`gone`), bukan dihitung sebagai kegagalan. Dulu blok seperti ini membuat bot berdiri diam menunggu blok yang sudah tidak ada.
+- **Menanam ulang**: setelah satu pohon selesai, bot menanam kembali sapling yang didapat dari daun yang ditebang. Dark oak (dan pohon 2×2 lain) butuh 4 sapling dalam kotak 2×2 — kalau sapling kurang dari 4, bot tidak menanam setengah-setengah. Pohon 1×1 cukup 1 sapling.
+- **Tidak diam di satu tempat**: kalau pathfinding ke sebuah blok timeout, bot menghentikan pathfinder yang masih berjalan dan membatalkan penggalian yang menggantung. Tanpa ini bot terlihat "stuck" karena masih berjalan ke tujuan lama sementara aksi berikutnya sudah dimulai. Daun tepat di atas kepala juga dibuka sebelum menumpuk blok, supaya bot bisa naik ke puncak pohon yang tertutup kanopi.
 
 ```json
 "gather": {
@@ -557,7 +562,16 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
     "maxFailures": 6,
     "waitMs": 2000,
     "climb": true,
-    "removeScaffolds": false
+    "removeScaffolds": false,
+    "clearLeaves": true,
+    "stuckMs": 20000,
+    "collectDrops": true,
+    "collectRadius": 12,
+    "collectPerDropMs": 3000,
+    "collectTimeoutMs": 20000,
+    "maxDrops": 32,
+    "replant": true,
+    "replantRadius": 2
   }
 }
 ```
@@ -568,7 +582,11 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
 - `waitMs` jeda tunggu kalau semua pohon di sekitar sedang diklaim bot lain.
 - `climb: false` melarang bot menumpuk blok untuk mencapai puncak (bot hanya menebang yang terjangkau).
 - `removeScaffolds: true` membongkar tumpukan blok setelah pohon selesai ditebang (default `false`, sama seperti perilaku `removeScaffolds` global).
-- Log progres muncul per pohon: `Bot <nama> menebang pohon <id> (n blok, tinggi h, jarak d blok)` dan `Pohon <id>: n log ditebang, progres x/y`.
+- `clearLeaves: false` melarang bot membuka daun (bot hanya menebang log yang memang sudah terbuka).
+- `stuckMs` batas waktu bot tidak menghasilkan kemajuan apa pun sebelum bot membuka daun di sekitarnya dan mencoba lagi; kalau dua kali tetap tidak ada kemajuan, pohon dilepas dengan alasan `stuck`.
+- `collectDrops: false` mematikan pengambilan drop di tanah; `collectRadius` jarak maksimum drop yang dikejar, `collectPerDropMs` batas waktu per drop, `collectTimeoutMs` batas total per pohon, `maxDrops` jumlah drop maksimum per pohon.
+- `replant: false` mematikan penanaman ulang; `replantRadius` jarak maksimum titik tanam dari bekas batang.
+- Log progres muncul per pohon: `Bot <nama> menebang pohon <id> (n blok, tinggi h, jarak d blok)` dan `Pohon <id>: n log ditebang, progres x/y`. Saat menanam ulang muncul `Menanam n sapling <jenis> di bekas pohon <id>`.
 
 Kalau perintah dijalankan lewat swarm, sisa kuota yang belum terpenuhi dibagi lagi ke bot yang idle sampai `swarm.gatherRounds` putaran (default 2), jadi kekurangan tidak langsung dilaporkan sebagai "selesai sebagian" tanpa usaha kedua.
 

@@ -83,6 +83,9 @@ async function digBlock (bot, block, options = {}) {
     await withTimeout(bot.dig(block), digTimeoutMs, 'Menggali blok timeout')
     return { ok: true }
   } catch (err) {
+    // Dig yang timeout tetap berjalan di background; hentikan supaya bot tidak
+    // terus memegang blok yang sama sementara aksi berikutnya dimulai.
+    try { bot.stopDigging?.() } catch {}
     return { ok: false, reason: err?.message || 'dig-failed' }
   }
 }
@@ -113,8 +116,14 @@ async function walkToBlock (bot, block, options = {}) {
     try {
       await withTimeout(bot.pathfinder.goto(goal), budget, 'Menuju blok tambang timeout')
     } catch {
-      // coba goal berikutnya
+      // withTimeout hanya menghentikan penantian, bukan pathfinder-nya. Kalau
+      // tidak dihentikan, bot terus berjalan ke goal lama (tampak "stuck" di
+      // satu tempat) sementara aksi berikutnya sudah dimulai.
+      try { bot.pathfinder.stop?.() } catch {}
     }
+  }
+  if (!inReach(bot, block, reach)) {
+    try { bot.pathfinder.stop?.() } catch {}
   }
   return inReach(bot, block, reach)
 }
