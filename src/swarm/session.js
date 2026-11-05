@@ -152,6 +152,7 @@ class BotSession {
       bot.combatManager?.stop()
       bot.arrowDodger?.stop()
       bot.combatEngine?.stop()
+      bot.playerTracker?.stop()
       this.bot = null
       this.auth?.stop()
       this.gamemode = null

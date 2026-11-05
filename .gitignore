@@ -2,6 +2,7 @@ node_modules/
 config.json
 *.log
 logs/
+data/tracker/
 blueprints/*
 !blueprints/README.md
 .hermes/

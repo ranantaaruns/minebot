@@ -17,6 +17,7 @@ const { LavaGuard } = require('./safety/lava')
 const { ArrowDodger } = require('./safety/dodge')
 const { ShieldBreakStrategy } = require('./safety/shieldbreak')
 const { CombatEngine } = require('./combat/engine')
+const { PlayerTracker } = require('./intel/tracker')
 const { sleep } = require('./util/async')
 
 function craftingPlugin () {
@@ -182,6 +183,10 @@ async function createBot (config, logger) {
     })
   })
   bot.combatEngine.start()
+
+  bot.playerTracker = new PlayerTracker(bot, config, logger)
+  bot.playerTracker.start().catch(() => {})
+  bot.on('end', () => bot.playerTracker?.stop())
 
   return bot
 }
