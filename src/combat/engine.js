@@ -115,7 +115,7 @@ class CombatEngine {
     if (mode === 'spear') {
       const spear = this.loadout.items().some(item => /_spear$/.test(bareName(item)))
       if (!spear) missing.push('spear')
-      if (!this.loadout.has('elytra')) missing.push('elytra')
+      if (!this.loadout.has('elytra') && !this.loadout.wearingElytra) missing.push('elytra')
       if (this.loadout.count('firework') <= 0) missing.push('firework_rocket')
     }
     return { ok: missing.length === 0, missing }
@@ -166,7 +166,7 @@ class CombatEngine {
     const maceMode = this.weaponMode === 'mace'
     const spearMode = this.weaponMode === 'spear'
     ctx.hasMace = maceMode && ctx.hasMace
-    ctx.hasElytra = spearMode && ctx.hasElytra
+    ctx.hasElytra = spearMode && (ctx.hasElytra || this.loadout.wearingElytra || ctx.elytraFlying)
     ctx.blocking = ctx.distance <= 3.8 && this.blocking(target)
     ctx.launchWindow = maceMode && this.mace.canLaunch({ distance: ctx.distance, dy: ctx.dy, blocking: ctx.blocking })
     ctx.smashable = maceMode && !this.recoveryPending && shouldSmash({
@@ -289,15 +289,19 @@ class CombatEngine {
   }
 
   async doFly (target, ctx) {
+    return this.doSpearAttack(target)
+  }
+
+  async doSpearAttack (target) {
+    if (this.weaponMode !== 'spear') return
     this.busy = true
     try {
-      if (ctx.distance > this.settings.chargeRange) {
-        await this.flyer.flyTo(this.aimPoint(target))
-        return
-      }
-      const result = await this.flyer.chargeAttack(target)
+      const takeoffs = this.flyer.stats.takeoffs
+      const result = await this.flyer.attackRun(target)
+      if (this.flyer.stats.takeoffs > takeoffs) this.stats.flights++
       if (result?.ok) this.stats.charges++
-      else this.flyer.release()
+      if (result?.phase === 'failed') this.flyer.release()
+      return result
     } finally {
       this.busy = false
     }
@@ -317,21 +321,7 @@ class CombatEngine {
   }
 
   async doCharge (target, ctx) {
-    this.busy = true
-    try {
-      // Target jauh (> flyRange) dan bot masih di tanah: buka elytra dulu.
-      if (!this.flyer.flying) {
-        if (ctx.distance <= this.settings.flyRange) return
-        if (!(await this.flyer.takeOff())) return
-        this.stats.flights++
-        return
-      }
-      const result = await this.flyer.chargeAttack(target)
-      if (result?.ok) this.stats.charges++
-      else this.flyer.release()
-    } finally {
-      this.busy = false
-    }
+    return this.doSpearAttack(target)
   }
 }
 

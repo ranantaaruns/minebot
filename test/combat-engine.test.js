@@ -189,15 +189,22 @@ test('target jauh (> flyRange) di tanah memicu takeoff elytra', async () => {
   assert.equal(bot.writes?.length || 0, 0, 'paket glide lewat _client')
 })
 
-test('target dekat (<= flyRange) di tanah tidak memakai elytra', async () => {
+test('mode spear selalu membuka elytra walau target dekat', async () => {
   const bot = fakeBot()
   const equips = []
   bot.equip = async (it, dest) => { equips.push([it.name, dest]) }
   const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('spear')
   engine.setTarget(enemy(0, 64, 10))
-  await engine.tick()
-  assert.equal(equips.length, 0)
-  assert.equal(engine.stats.flights, 0)
+  const p = engine.tick()
+  for (let i = 0; i < 2; i++) {
+    await new Promise(r => setTimeout(r, 5))
+    bot.emit('physicsTick')
+  }
+  await p
+  assert.deepEqual(equips[0], ['elytra', 'torso'])
+  assert.equal(engine.stats.flights, 1)
+  assert.equal(bot.attacks.length, 0, 'takeoff dulu, bukan serangan langsung')
 })
 
 test('busy menahan tick berikutnya (tidak dobel attack)', async () => {
@@ -277,4 +284,11 @@ test('perlengkapan mace dan spear divalidasi tanpa menganggap pedang sebagai spe
   assert.deepEqual(engine.equipmentStatus('spear'), { ok: true, missing: [] })
   bot.inventory.slots[11] = null
   assert.deepEqual(engine.equipmentStatus('mace'), { ok: false, missing: ['wind_charge'] })
+  bot.inventory.slots[16] = null
+  bot.inventory.slots[6] = { name: 'elytra', count: 1 }
+  assert.deepEqual(engine.equipmentStatus('spear'), { ok: true, missing: [] }, 'elytra yang dipakai tetap dihitung')
+  engine.setWeaponMode('spear')
+  bot.entity.elytraFlying = true
+  bot.entity.onGround = false
+  assert.equal(engine.buildContext(enemy()).hasElytra, true)
 })

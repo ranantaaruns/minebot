@@ -3,7 +3,7 @@
 const { nextTick, startGlide } = require('./tick')
 const { TAGS } = require('./loadout')
 const { tangentialIntercept, POST_HIT_PITCH } = require('./charge')
-const { horizontalSpeed, runupPoint, avoidancePoint, shouldStrike } = require('./flight')
+const { horizontalSpeed, relativeSpeed, runupPoint, avoidancePoint, shouldStrike } = require('./flight')
 
 const DEG = Math.PI / 180
 
@@ -24,20 +24,26 @@ class ElytraFlyer {
       altitude: 4,
       avoidance: true,
       avoidanceDistance: 6,
+      glideWaitMs: 800,
       ...options
     }
     this.stats = { takeoffs: 0, boosts: 0, charges: 0, hits: 0, avoidances: 0 }
     this.lastBoost = 0
+    this.lastTakeoffAt = 0
     this.engaged = false
     this.phase = 'idle'
   }
 
   get flying () {
-    return this.bot.entity?.elytraFlying === true || (this.bot.entity?.velocity?.y ?? 0) < -0.05
+    return this.bot.entity?.elytraFlying === true
   }
 
   async takeOff () {
     const bot = this.bot
+    if (this.loadout.count(TAGS.FIREWORK) <= 0) {
+      this.logger?.debug?.('Elytra: firework tidak ada')
+      return false
+    }
     if (!(await this.loadout.swapChest(TAGS.ELYTRA))) {
       this.logger?.debug?.('Elytra: tidak ada di inventori')
       return false
@@ -53,6 +59,7 @@ class ElytraFlyer {
     }
     this.stats.takeoffs++
     this.lastBoost = 0
+    this.lastTakeoffAt = Date.now()
     return true
   }
 
@@ -109,33 +116,61 @@ class ElytraFlyer {
   async attackRun (target) {
     const bot = this.bot
     if (bot.entity?.onGround === true || !this.flying) {
+      // Metadata elytra menyusul beberapa tick setelah entity_action. Jangan
+      // mengirim takeoff berulang selama menunggu server mengonfirmasi glide.
+      if (Date.now() - this.lastTakeoffAt < this.settings.glideWaitMs) {
+        return { ok: false, phase: 'takeoff' }
+      }
       const ok = await this.takeOff()
-      this.phase = 'idle'
+      this.phase = ok ? 'takeoff' : 'idle'
       return { ok: false, phase: ok ? 'takeoff' : 'failed' }
     }
     const dist = bot.entity.position.distanceTo(target.position)
-    const speed = horizontalSpeed(bot.entity)
-    if (this.phase !== 'strike' && (dist > this.settings.runupDistance || speed < this.settings.attackSpeed)) {
-      this.phase = 'runup'
-      const point = runupPoint(
-        bot.entity.position,
-        target.position,
-        this.settings.runupDistance,
-        this.settings.altitude
-      )
-      await this.flyTo(point, { targetSpeed: this.settings.attackSpeed })
-      return { ok: false, phase: 'runup', speed }
+    const horizontalDistance = Math.hypot(
+      bot.entity.position.x - target.position.x,
+      bot.entity.position.z - target.position.z
+    )
+    const speed = relativeSpeed(bot.entity, target)
+
+    // Fase run-up hanya sampai bot cukup jauh DAN cukup cepat. Setelah itu
+    // fase strike dipertahankan agar bot berbalik mendekat, bukan menjauh terus.
+    if (this.phase !== 'strike') {
+      if (horizontalDistance < this.settings.runupDistance || speed < this.settings.attackSpeed) {
+        this.phase = 'runup'
+        const point = runupPoint(
+          bot.entity.position,
+          target.position,
+          this.settings.runupDistance,
+          this.settings.altitude
+        )
+        await this.flyTo(point, { targetSpeed: this.settings.attackSpeed })
+        return { ok: false, phase: 'runup', speed }
+      }
+      this.phase = 'strike'
     }
+
     this.phase = 'strike'
-    await this.engage()
-    // Hanya menyerang saat berada di dalam jangkauan spear (2.2–3.8 blok).
+    // Jangan menyerang menembus tembok; flyTo akan memilih titik naik/turun.
+    const safe = this.settings.avoidance
+      ? avoidancePoint(bot, this.aimCenter(target), { distance: this.settings.avoidanceDistance })
+      : { avoided: false }
+    if (safe.avoided) {
+      await this.flyTo(this.aimCenter(target), { targetSpeed: this.settings.attackSpeed })
+      return { ok: false, phase: 'avoid', speed }
+    }
+
+    if (!(await this.engage())) return { ok: false, phase: 'failed', speed }
     if (shouldStrike({ distance: dist, speed, minSpeed: this.settings.minStrikeSpeed })) {
       const result = await this.chargeAttack(target)
-      return result
+      if (result?.ok) this.phase = 'runup'
+      return { ...result, phase: result?.ok ? 'hit' : 'strike', speed }
     }
-    // Belum cukup dekat: luruskan ke titik tengah target, menunggu masuk range.
-    await this.flyTo(this.aimCenter(target), { allowBoost: false })
-    return { ok: false, phase: 'strike' }
+    // Mendekat dengan rocket tetap aktif agar charge dilakukan pada speed tinggi.
+    await this.flyTo(this.aimCenter(target), {
+      allowBoost: true,
+      targetSpeed: this.settings.attackSpeed
+    })
+    return { ok: false, phase: 'strike', speed }
   }
 
   async chargeAttack (target) {
@@ -153,6 +188,7 @@ class ElytraFlyer {
     await bot.lookAt(computed.point, true)
     bot.attack(target)
     this.stats.charges++
+    this.stats.hits++
     await bot.lookAt(this.aimCenter(target), true).catch(() => {})
     this.climbAway()
     return computed
@@ -165,6 +201,8 @@ class ElytraFlyer {
 
   async land () {
     this.release()
+    this.phase = 'idle'
+    this.lastTakeoffAt = 0
     return this.loadout.swapChest(TAGS.CHESTPLATE)
   }
 }

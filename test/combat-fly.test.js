@@ -192,6 +192,7 @@ test('attackRun menjauh dan memakai firework untuk mengumpulkan kecepatan', asyn
 test('attackRun menyerang saat kecepatan dan jarak memenuhi syarat', async () => {
   const bot = fakeBot()
   const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, { runupDistance: 12, attackSpeed: 1 })
+  flyer.phase = 'strike'
   bot.entity.onGround = false
   bot.entity.elytraFlying = true
   bot.entity.position = new Vec3(0, 74, 0)
@@ -214,4 +215,32 @@ test('flyTo menghindari blok di depan dengan menaikkan titik terbang', async () 
   await flyer.flyTo(new Vec3(20, 74, 0))
   assert.ok(bot.looks[0].y > 76, 'pandangan diarahkan ke atas untuk melewati tembok')
   assert.equal(flyer.stats.avoidances, 1)
+})
+
+test('attackRun berbalik menuju target setelah run-up dan kecepatan cukup', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, { runupDistance: 12, attackSpeed: 1 })
+  bot.entity.onGround = false
+  bot.entity.elytraFlying = true
+  bot.entity.position = new Vec3(0, 74, 0)
+  bot.entity.velocity = new Vec3(1.4, 0, 0)
+  const target = { position: new Vec3(14, 70, 0), velocity: new Vec3(0, 0, 0), height: 1.8 }
+  const result = await flyer.attackRun(target)
+  assert.equal(result.phase, 'strike')
+  assert.ok(bot.looks.at(-1).x > 0, 'setelah run-up bot terbang ke target, bukan terus menjauh')
+  assert.equal(bot.attacks.length, 0, 'masih di luar jangkauan hit')
+})
+
+test('strike memakai kecepatan relatif terhadap target', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, { attackSpeed: 1, minStrikeSpeed: 0.9 })
+  flyer.phase = 'strike'
+  bot.entity.onGround = false
+  bot.entity.elytraFlying = true
+  bot.entity.position = new Vec3(0, 74, 0)
+  bot.entity.velocity = new Vec3(1.4, 0, 0)
+  const target = { position: new Vec3(3, 73, 0), velocity: new Vec3(1.4, 0, 0), height: 1.8 }
+  const result = await flyer.attackRun(target)
+  assert.equal(bot.attacks.length, 0, 'target secepat bot membuat kecepatan relatif nol')
+  assert.notEqual(result.ok, true)
 })

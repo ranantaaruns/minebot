@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const Vec3 = require('vec3')
-const { horizontalSpeed, runupPoint, scanAhead, avoidancePoint, shouldStrike, isSolidBlock } = require('../src/combat/flight')
+const { horizontalSpeed, relativeSpeed, runupPoint, scanAhead, avoidancePoint, shouldStrike, isSolidBlock } = require('../src/combat/flight')
 
 function botWithWall (wallX = 4) {
   const bot = {
@@ -17,6 +17,12 @@ function botWithWall (wallX = 4) {
 
 test('horizontalSpeed hanya memakai X/Z', () => {
   assert.equal(horizontalSpeed({ velocity: new Vec3(3, 9, 4) }), 5)
+})
+
+test('relativeSpeed mengurangkan kecepatan target', () => {
+  const self = { velocity: new Vec3(1.4, 0, 0) }
+  assert.equal(relativeSpeed(self, { velocity: new Vec3(1.4, 0, 0) }), 0)
+  assert.ok(Math.abs(relativeSpeed(self, { velocity: new Vec3(0.4, 0, 0) }) - 1) < 1e-9)
 })
 
 test('runupPoint berada di sisi bot yang menjauh dari target', () => {
@@ -34,6 +40,19 @@ test('scanAhead menemukan blok sebelum bot menabrak', () => {
 test('scanAhead menganggap udara bersih', () => {
   const hit = scanAhead(botWithWall(99), new Vec3(1, 0, 0), 8)
   assert.equal(hit.clear, true)
+})
+
+test('scanAhead mendeteksi lantai pada lintasan menukik dan atap di ketinggian kepala', () => {
+  const bot = botWithWall(99)
+  bot.blockAt = p => (p.y <= 69 ? { name: 'stone', position: p } : { name: 'air', position: p })
+  const floor = scanAhead(bot, new Vec3(0, -1, 0), 3)
+  assert.equal(floor.clear, false)
+  assert.equal(floor.offsetY, 0.2)
+
+  bot.blockAt = p => (p.y >= 71 ? { name: 'stone', position: p } : { name: 'air', position: p })
+  const roof = scanAhead(bot, new Vec3(0, 1, 0), 3)
+  assert.equal(roof.clear, false)
+  assert.equal(roof.offsetY, 1.4)
 })
 
 test('avoidancePoint mengalihkan lintasan ke atas saat ada tembok', () => {
