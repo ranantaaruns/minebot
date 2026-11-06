@@ -112,7 +112,12 @@
       "bowRange": 24,
       "drawMs": 1000,
       "tickMs": 250,
-      "timeoutMs": 180000
+      "timeoutMs": 180000,
+      "lavaEnabled": true,
+      "lavaCooldownMs": 12000,
+      "lavaBurnTicks": 8,
+      "lavaRange": 3.2,
+      "lavaPickupAttempts": 3
     }
   },
   "storage": {

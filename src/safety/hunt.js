@@ -10,6 +10,7 @@ const { fleeFrom } = require('./flee')
 const { jumpCrit, canCrit } = require('./crit')
 const { ShieldBreakStrategy } = require('./shieldbreak')
 const { predictAimPoint, MAX_SPEED } = require('./ballistics')
+const { LavaBucketAttack } = require('../combat/lava')
 
 const ARROW_NAMES = new Set(['arrow', 'spectral_arrow', 'tipped_arrow'])
 const BOW_SCORES = { bow: 10, crossbow: 8 }
@@ -109,6 +110,11 @@ class PlayerHunter {
       critTickMs: 20,
       critRiseTimeoutMs: 250,
       critFallTimeoutMs: 500,
+      lavaEnabled: true,
+      lavaCooldownMs: 12000,
+      lavaBurnTicks: 8,
+      lavaRange: 3.2,
+      lavaPickupAttempts: 3,
       shieldBreakEnabled: true,
       shieldBreakPunishMs: 5000,
       shieldBreakWindowMs: 1500,
@@ -123,6 +129,13 @@ class PlayerHunter {
     this.lastWeapon = 'sword'
     this.axeWarned = false
     this.shield = new ShieldGuard(bot, combat, logger)
+    this.lava = new LavaBucketAttack(bot, logger, {
+      enabled: this.settings.lavaEnabled !== false,
+      cooldownMs: this.settings.lavaCooldownMs,
+      burnTicks: this.settings.lavaBurnTicks,
+      range: this.settings.lavaRange,
+      pickupAttempts: this.settings.lavaPickupAttempts
+    })
     this.shieldBreak = new ShieldBreakStrategy({
       enabled: this.settings.shieldBreakEnabled !== false,
       punishMs: Number(this.settings.shieldBreakPunishMs) || 5000,
@@ -170,7 +183,7 @@ class PlayerHunter {
       this.bot.combatEngine?.assertEquipment?.()
       await this._equipArmor()
       this.shield.setTarget(initial.entity)
-      if (this.bot.combatEngine?.weaponMode === 'normal' || !this.bot.combatEngine) this.shield.start()
+      if (!this.bot.combatEngine || !this.bot.combatEngine.weaponMode || this.bot.combatEngine.weaponMode === 'normal') this.shield.start()
       // Engine PvP hanya aktif di sini: serangan udara (mace/elytra) tidak
       // pernah jalan tanpa perintah "attack".
       this.bot.combatEngine?.setTarget(initial.entity)
@@ -179,6 +192,7 @@ class PlayerHunter {
     } finally {
       this._stopPath()
       this.shield.stop()
+      await this.lava?.recover?.().catch(() => false)
       this.bot.combatEngine?.clearTarget()
       try { this.bot.removeListener?.('entityDead', onDead) } catch {}
       try { this.bot.removeListener?.('path_update', onPath) } catch {}
@@ -224,6 +238,7 @@ class PlayerHunter {
 
       if (distance <= Number(this.settings.meleeRange)) {
         this._stopPath()
+        if (await this.lava.tryAttack(entity)) stats.lava = (stats.lava || 0) + 1
         if (await this.attackMelee(entity, distance, stats)) stats.hits++
       } else if (this._bowReady() && distance <= Number(this.settings.bowRange)) {
         this._stopPath()
@@ -547,6 +562,7 @@ class PlayerHunter {
       reason,
       hits: stats.hits,
       crits: stats.crits || 0,
+      lava: stats.lava || 0,
       breaks: this.shieldBreak.stats.breaks,
       shots: stats.shots,
       retreats: stats.retreats || 0,

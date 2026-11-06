@@ -119,6 +119,11 @@ const DEFAULTS = {
       critTickMs: 20,
       critRiseTimeoutMs: 250,
       critFallTimeoutMs: 500,
+      lavaEnabled: true,
+      lavaCooldownMs: 12000,
+      lavaBurnTicks: 8,
+      lavaRange: 3.2,
+      lavaPickupAttempts: 3,
       shieldBreakEnabled: true,
       shieldBreakPunishMs: 5000,
       shieldBreakWindowMs: 1500
@@ -397,7 +402,7 @@ function validate (config) {
     if (!isObject(config.combat.hunt)) {
       errors.push('combat.hunt harus berupa object')
     } else {
-      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs']) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts']) {
         const value = Number(config.combat.hunt[key])
         if (!Number.isFinite(value) || value <= 0) {
           errors.push(`combat.hunt.${key} harus lebih dari 0`)
@@ -584,7 +589,7 @@ function loadConfig (configPath) {
       }
     }
     if (isObject(config.combat.hunt)) {
-      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs']) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts']) {
         config.combat.hunt[key] = Number(config.combat.hunt[key])
       }
     }
