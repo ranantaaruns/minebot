@@ -34,6 +34,7 @@ Perintah yang tersedia:
   gamemode [mode]               Lihat atau ubah gamemode bot (survival/creative/dll)
   gather <item> [count]         Kumpulkan material (contoh: gather ancient_debris 4)
   attack <nama player>          Cari dan bunuh player (bow dipakai untuk jarak jauh)
+  weapon [normal|mace|spear]    Pilih PvP biasa, mace + wind charge, atau spear + elytra
   combat [on|off]               Lihat/aktifkan mesin PvP udara (mace + elytra charge)
   track [on|off|where <p>|export [file]|clear]  Lacak koordinat player dari paket entity
   come [x y z]                  Datang ke owner (atau koordinat tertentu)
@@ -186,6 +187,9 @@ class Cli {
         return this.handleGather(args)
       case 'attack':
         return this.handleAttack(args)
+      case 'weapon':
+      case 'senjata':
+        return this.handleWeapon(args)
       case 'combat':
       case 'pvp':
         return this.handleCombat(args)
@@ -732,6 +736,45 @@ class Cli {
     throw new Error(`Player "${target}" tidak ditemukan.${hint}`)
   }
 
+  async handleWeapon (args) {
+    const requested = String(args[0] || '').toLowerCase()
+    if (args.length > 1 || (requested && !['normal', 'mace', 'spear'].includes(requested))) {
+      throw new Error('Gunakan: weapon [normal|mace|spear]')
+    }
+    const sessions = this.swarm ? this.swarm.getConnectedBots() : [this.session]
+    const available = sessions.filter(s => s?.bot?.combatEngine)
+    if (!available.length) throw new Error('Bot belum terhubung atau engine PvP tidak tersedia')
+
+    if (!requested) {
+      const lines = available.map(s => {
+        const engine = s.bot.combatEngine
+        const mode = engine.weaponMode || 'normal'
+        const status = engine.equipmentStatus(mode)
+        const ready = status.ok ? 'siap' : `kurang: ${status.missing.join(', ')}`
+        return `${s.bot.username || 'bot'}: ${mode} (${ready})`
+      })
+      for (const line of lines) this.logger.info(`Weapon ${line}`)
+      return lines
+    }
+
+    const unavailable = []
+    for (const s of available) {
+      const status = s.bot.combatEngine.equipmentStatus(requested)
+      if (!status.ok) unavailable.push(`${s.bot.username || 'bot'}: ${status.missing.join(', ')}`)
+    }
+    if (unavailable.length) {
+      throw new Error(`Mode ${requested} belum bisa dipakai; ${unavailable.join('; ')}`)
+    }
+
+    const lines = []
+    for (const s of available) {
+      s.bot.combatEngine.setWeaponMode(requested)
+      lines.push(`${s.bot.username || 'bot'}: ${requested}`)
+    }
+    for (const line of lines) this.logger.info(`Weapon ${line}`)
+    return lines
+  }
+
   async handleCombat (args) {
     const mode = String(args[0] || '').toLowerCase()
     let enable = null
@@ -746,8 +789,9 @@ class Cli {
       if (!engine) continue
       if (enable !== null) engine.enabled = enable
       const status = engine.enabled ? 'aktif' : 'nonaktif'
+      const weapon = engine.weaponMode || 'normal'
       const st = engine.stats || {}
-      lines.push(`${s.bot.username || 'bot'}: ${status} (luncur ${st.launches || 0}, smash ${st.smashes || 0}, charge ${st.charges || 0}, clutch ${st.clutch || 0})`)
+      lines.push(`${s.bot.username || 'bot'}: ${status}, ${weapon} (luncur ${st.launches || 0}, smash ${st.smashes || 0}, charge ${st.charges || 0}, clutch ${st.clutch || 0})`)
     }
     if (!lines.length) throw new Error('Bot belum terhubung atau engine PvP tidak tersedia')
     for (const line of lines) this.logger.info(`Combat ${line}`)

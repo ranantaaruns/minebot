@@ -96,7 +96,11 @@ class CombatEngine {
     const wanted = String(mode || '').toLowerCase()
     if (!WEAPON_MODES.includes(wanted)) throw new Error('Mode senjata harus normal, mace, atau spear')
     if (wanted !== this.weaponMode) {
-      this.flyer.release()
+      if (this.weaponMode === 'spear') {
+        this.flyer.land().catch(err => this.logger?.debug?.(`Elytra dilepas: ${err.message}`))
+      } else {
+        this.flyer.release()
+      }
       this.flyer.phase = 'idle'
       this.state = STATES.IDLE
       this.burstPending = false
@@ -133,7 +137,11 @@ class CombatEngine {
     this.state = STATES.IDLE
     this.burstPending = false
     this.recoveryPending = false
-    this.flyer.release()
+    if (this.weaponMode === 'spear') {
+      this.flyer.land().catch(err => this.logger?.debug?.(`Elytra dilepas: ${err.message}`))
+    } else {
+      this.flyer.release()
+    }
     this.flyer.phase = 'idle'
     try { this.bot.setControlState?.('jump', false) } catch {}
   }
