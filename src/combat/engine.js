@@ -6,6 +6,8 @@ const { HotbarLoadout } = require('./loadout')
 const { MaceSmasher, shouldSmash, shouldClutch } = require('./mace')
 const { ElytraFlyer } = require('./fly')
 
+const WEAPON_MODES = Object.freeze(['normal', 'mace', 'spear'])
+
 // Jarak vertikal ke permukaan di bawah bot, dibatasi supaya tidak memindai
 // seluruh dunia saat bot terbang tinggi.
 function heightAboveGround (bot, maxScan = 24) {
@@ -43,6 +45,7 @@ class CombatEngine {
       shieldPunishMs: Number(combat.hunt?.shieldBreakPunishMs) || 5000
     }
     this.enabled = this.settings.enabled
+    this.weaponMode = 'normal'
     this.loadout = deps.loadout || new HotbarLoadout(bot, pvp.loadout || {}, logger)
     this.mace = deps.mace || new MaceSmasher(bot, this.loadout, logger, pvp)
     this.flyer = deps.flyer || new ElytraFlyer(bot, this.loadout, logger, pvp)
@@ -52,6 +55,7 @@ class CombatEngine {
     this.state = STATES.IDLE
     this.busy = false
     this.burstPending = false
+    this.recoveryPending = false
     this.started = false
     this.stats = { ticks: 0, launches: 0, smashes: 0, clutch: 0, charges: 0, shields: 0, flights: 0 }
     this.onTick = this.tick.bind(this)
@@ -88,10 +92,50 @@ class CombatEngine {
     return this.target
   }
 
+  setWeaponMode (mode) {
+    const wanted = String(mode || '').toLowerCase()
+    if (!WEAPON_MODES.includes(wanted)) throw new Error('Mode senjata harus normal, mace, atau spear')
+    if (wanted !== this.weaponMode) {
+      this.flyer.release()
+      this.flyer.phase = 'idle'
+      this.state = STATES.IDLE
+      this.burstPending = false
+      this.recoveryPending = false
+    }
+    this.weaponMode = wanted
+    return wanted
+  }
+
+  equipmentStatus (mode = this.weaponMode) {
+    const missing = []
+    if (mode === 'mace') {
+      if (!this.loadout.has('mace')) missing.push('mace')
+      if (this.loadout.count('windCharge') <= 0) missing.push('wind_charge')
+    }
+    if (mode === 'spear') {
+      const spear = this.loadout.items().some(item => /_spear$/.test(bareName(item)))
+      if (!spear) missing.push('spear')
+      if (!this.loadout.has('elytra')) missing.push('elytra')
+      if (this.loadout.count('firework') <= 0) missing.push('firework_rocket')
+    }
+    return { ok: missing.length === 0, missing }
+  }
+
+  assertEquipment () {
+    if (this.weaponMode === 'normal') return
+    if (!this.enabled) throw new Error('Combat nonaktif; jalankan "combat on" atau pilih "weapon normal"')
+    const status = this.equipmentStatus()
+    if (!status.ok) throw new Error(`Mode ${this.weaponMode} butuh: ${status.missing.join(', ')}`)
+  }
+
   clearTarget () {
     this.target = null
     this.state = STATES.IDLE
     this.burstPending = false
+    this.recoveryPending = false
+    this.flyer.release()
+    this.flyer.phase = 'idle'
+    try { this.bot.setControlState?.('jump', false) } catch {}
   }
 
   currentTarget () {
@@ -119,18 +163,22 @@ class CombatEngine {
   buildContext (target) {
     this.fall.update()
     const ctx = createContext({ bot: this.bot, target, fallDistance: this.fall.distance })
-    ctx.blocking = this.blocking(target)
-    ctx.launchWindow = this.mace.canLaunch({ distance: ctx.distance, dy: ctx.dy, blocking: ctx.blocking })
-    ctx.smashable = shouldSmash({
+    const maceMode = this.weaponMode === 'mace'
+    const spearMode = this.weaponMode === 'spear'
+    ctx.hasMace = maceMode && ctx.hasMace
+    ctx.hasElytra = spearMode && ctx.hasElytra
+    ctx.blocking = ctx.distance <= 3.8 && this.blocking(target)
+    ctx.launchWindow = maceMode && this.mace.canLaunch({ distance: ctx.distance, dy: ctx.dy, blocking: ctx.blocking })
+    ctx.smashable = maceMode && !this.recoveryPending && shouldSmash({
       distance: ctx.distance,
       velocityY: ctx.velocityY,
       fallDistance: this.fall.distance,
       smashRange: this.settings.smashRange,
       minFall: this.settings.minFall
     })
-    ctx.burst = this.burstPending && ctx.onGround !== true
+    ctx.burst = maceMode && this.burstPending && ctx.onGround !== true
     ctx.heightAbove = heightAboveGround(this.bot)
-    ctx.clutch = shouldClutch({
+    ctx.clutch = maceMode && shouldClutch({
       distance: ctx.distance,
       fallDistance: this.fall.distance,
       heightAbove: ctx.heightAbove,
@@ -143,7 +191,7 @@ class CombatEngine {
   async tick () {
     if (!this.enabled || this.busy) return
     const target = this.currentTarget()
-    if (!target) return
+    if (!target || this.weaponMode === 'normal') return
     this.stats.ticks++
     const ctx = this.buildContext(target)
     const state = nextState(this.state, ctx)
@@ -223,6 +271,9 @@ class CombatEngine {
       // dipulihkan dengan wind charge lagi saat bot kembali menapak.
       const firstHit = this.mace.chainCount === 1
       this.burstPending = firstHit && this.mace.settings.chain !== false && this.mace.hasWindBurst()
+      // Smash kedua (atau smash tanpa Wind Burst) wajib diikuti launch baru.
+      // Ini mencegah hit ketiga gratis dan mengembalikan siklus ke wind charge.
+      this.recoveryPending = !this.burstPending
     } finally {
       this.busy = false
     }
@@ -255,7 +306,11 @@ class CombatEngine {
   async doLaunch (target) {
     this.busy = true
     try {
-      if (await this.mace.launch(target)) this.stats.launches++
+      if (await this.mace.launch(target)) {
+        this.stats.launches++
+        this.recoveryPending = false
+        this.burstPending = false
+      }
     } finally {
       this.busy = false
     }
@@ -280,4 +335,4 @@ class CombatEngine {
   }
 }
 
-module.exports = { CombatEngine, heightAboveGround }
+module.exports = { CombatEngine, heightAboveGround, WEAPON_MODES }

@@ -103,6 +103,28 @@ const DIAMOND_SWORD = { type: 2, name: 'diamond_sword', count: 1 }
 const BOW = { type: 3, name: 'bow', count: 1 }
 const ARROW = { type: 4, name: 'arrow', count: 16 }
 
+test('mode mace menyerahkan serangan ke engine dan menghentikan pathfinder di dalam jendela', async () => {
+  const entity = playerEntity(new Vec3(6, 64, 0))
+  const bot = fakeBot({ items: [DIAMOND_SWORD, BOW, ARROW] })
+  bot.entity.onGround = true
+  withPlayer(bot, entity)
+  bot.pathfinder.setGoal(new goals.GoalFollow(entity, 2), true)
+  bot.combatEngine = {
+    weaponMode: 'mace',
+    busy: false,
+    settings: { chargeRange: 12 },
+    mace: { settings: { maxRange: 10 } },
+    assertEquipment () {},
+    setTarget () {},
+    clearTarget () {}
+  }
+  const hunter = new PlayerHunter(bot, huntConfig({ timeoutMs: 40 }), silentLogger)
+  const result = await hunter.hunt('Owner')
+  assert.equal(result.reason, 'timeout')
+  assert.equal(bot.attacks.length, 0, 'hunter tidak menyerang memakai sword/bow di mode mace')
+  assert.equal(bot.pathfinder.goal, null, 'pathfinder tidak menimpa pitch wind charge')
+})
+
 test('findPlayer matches usernames case-insensitively', () => {
   const bot = fakeBot()
   const entity = withPlayer(bot, playerEntity(new Vec3(0, 64, 0)), 'Owner')

@@ -73,13 +73,26 @@ test('enabled=false mematikan seluruh aksi', async () => {
   assert.equal(bot.activations, 0)
 })
 
-test('target dalam jendela luncur memicu wind charge', async () => {
+test('mode normal memakai hunter melee, bukan combo udara otomatis', async () => {
   const bot = fakeBot()
   const engine = new CombatEngine(bot, {}, silent)
   engine.setTarget(enemy(0, 64, 6))
+  await engine.tick()
+  assert.equal(engine.weaponMode, 'normal')
+  assert.equal(bot.activations, 0)
+  assert.equal(engine.state, STATES.IDLE)
+})
+
+test('target dalam jendela luncur memicu wind charge pada mode mace', async () => {
+  const bot = fakeBot()
+  const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('mace')
+  engine.setTarget(enemy(0, 64, 6))
   const p = engine.tick()
-  await new Promise(r => setTimeout(r, 5))
-  bot.emit('physicsTick')
+  for (let i = 0; i < 3; i++) {
+    await new Promise(r => setTimeout(r, 5))
+    bot.emit('physicsTick')
+  }
   await p
   assert.equal(engine.state, STATES.LAUNCH)
   assert.equal(bot.activations, 1, 'wind charge dipakai')
@@ -89,6 +102,7 @@ test('target dalam jendela luncur memicu wind charge', async () => {
 test('jatuh cepat dekat target memicu smash (attack)', async () => {
   const bot = fakeBot({ onGround: false, position: new Vec3(0, 66, 0) })
   const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('mace')
   engine.setTarget(enemy(0, 64, 2))
   // bangun fallDistance: puncak 67 -> sekarang 66
   bot.entity.velocity = new Vec3(0, -0.5, 0)
@@ -104,6 +118,7 @@ test('target memegang perisai -> state SHIELD memakai kapak', async () => {
   const bot = fakeBot()
   const selected = []
   const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('mace')
   engine.loadout.select = async tag => { selected.push(tag); return true }
   const t = enemy(0, 64, 2)
   t.heldItem = { name: 'shield' }
@@ -143,6 +158,7 @@ test('event death mereset state dan target', async () => {
 test('doFly mengambil alih elytra saat target jauh', async () => {
   const bot = fakeBot()
   const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('spear')
   const t = enemy(0, 64, 30)
   engine.setTarget(t)
   engine.bot.entity.elytraFlying = true
@@ -160,6 +176,7 @@ test('target jauh (> flyRange) di tanah memicu takeoff elytra', async () => {
   const equips = []
   bot.equip = async (it, dest) => { equips.push([it.name, dest]) }
   const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('spear')
   engine.setTarget(enemy(0, 64, 20))
   const p = engine.tick()
   await new Promise(r => setTimeout(r, 5))
@@ -186,6 +203,7 @@ test('target dekat (<= flyRange) di tanah tidak memakai elytra', async () => {
 test('busy menahan tick berikutnya (tidak dobel attack)', async () => {
   const bot = fakeBot({ onGround: false, position: new Vec3(0, 66, 0) })
   const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('mace')
   engine.setTarget(enemy(0, 64, 2))
   engine.fall.peakY = 67.5
   engine.busy = true
@@ -196,6 +214,7 @@ test('busy menahan tick berikutnya (tidak dobel attack)', async () => {
 test('Wind Burst: setelah smash bot menunggu jatuh lagi, bukan spam attack saat naik', async () => {
   const bot = fakeBot({ onGround: false, position: new Vec3(0, 66, 0) })
   const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('mace')
   engine.mace.hasWindBurst = () => true
   engine.setTarget(enemy(0, 64, 2))
   bot.entity.velocity = new Vec3(0, -0.5, 0)
@@ -216,15 +235,46 @@ test('Wind Burst: setelah smash bot menunggu jatuh lagi, bukan spam attack saat 
   assert.equal(engine.state, STATES.SMASH)
   assert.equal(bot.attacks.length, 2, 'smash kedua tanpa wind charge tambahan')
   assert.equal(engine.burstPending, false, 'setelah hit kedua wind charge boleh dipakai lagi')
+  assert.equal(engine.recoveryPending, true)
+
+  bot.entity.velocity = new Vec3(0, -0.7, 0)
+  engine.fall.peakY = 70
+  await engine.tick()
+  assert.equal(bot.attacks.length, 2, 'smash ketiga ditahan sampai wind charge launch berikutnya')
+
+  bot.entity.onGround = true
+  bot.entity.position = new Vec3(0, 64, 0)
+  bot.entity.velocity = new Vec3(0, 0, 0)
+  engine.mace.nextLaunchAt = 0
+  const relaunch = engine.tick()
+  for (let i = 0; i < 3; i++) {
+    await new Promise(r => setTimeout(r, 5))
+    bot.emit('physicsTick')
+  }
+  await relaunch
+  assert.equal(bot.activations, 1, 'wind charge baru dipakai setelah smash kedua dan mendarat')
+  assert.equal(engine.recoveryPending, false)
 })
 
 test('mace tanpa Wind Burst tidak membuat state BURST', async () => {
   const bot = fakeBot({ onGround: false, position: new Vec3(0, 66, 0) })
   const engine = new CombatEngine(bot, {}, silent)
+  engine.setWeaponMode('mace')
   engine.mace.hasWindBurst = () => false
   engine.setTarget(enemy(0, 64, 2))
   bot.entity.velocity = new Vec3(0, -0.5, 0)
   engine.fall.peakY = 68
   await engine.tick()
   assert.equal(engine.burstPending, false)
+})
+
+test('perlengkapan mace dan spear divalidasi tanpa menganggap pedang sebagai spear', () => {
+  const bot = fakeBot()
+  const engine = new CombatEngine(bot, {}, silent)
+  assert.deepEqual(engine.equipmentStatus('mace'), { ok: true, missing: [] })
+  assert.deepEqual(engine.equipmentStatus('spear'), { ok: false, missing: ['spear'] })
+  bot.inventory.slots[10] = { name: 'netherite_spear', count: 1 }
+  assert.deepEqual(engine.equipmentStatus('spear'), { ok: true, missing: [] })
+  bot.inventory.slots[11] = null
+  assert.deepEqual(engine.equipmentStatus('mace'), { ok: false, missing: ['wind_charge'] })
 })

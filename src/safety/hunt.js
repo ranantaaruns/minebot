@@ -167,9 +167,10 @@ class PlayerHunter {
     const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Infinity
 
     try {
+      this.bot.combatEngine?.assertEquipment?.()
       await this._equipArmor()
       this.shield.setTarget(initial.entity)
-      this.shield.start()
+      if (this.bot.combatEngine?.weaponMode === 'normal' || !this.bot.combatEngine) this.shield.start()
       // Engine PvP hanya aktif di sini: serangan udara (mace/elytra) tidak
       // pernah jalan tanpa perintah "attack".
       this.bot.combatEngine?.setTarget(initial.entity)
@@ -213,6 +214,11 @@ class PlayerHunter {
       }
 
       const distance = this.bot.entity.position.distanceTo(entity.position)
+      if (this._specialMode()) {
+        this._steerSpecial(entity, distance)
+        await sleep(50, cancellation)
+        continue
+      }
       this.shield.setTarget(entity)
       await this.shield.update(entity, distance)
 
@@ -228,6 +234,29 @@ class PlayerHunter {
 
       await sleep(Number(this.settings.tickMs) || 250, cancellation)
     }
+  }
+
+  _specialMode () {
+    const mode = this.bot.combatEngine?.weaponMode
+    return mode === 'mace' || mode === 'spear' ? mode : null
+  }
+
+  _steerSpecial (entity, distance) {
+    const engine = this.bot.combatEngine
+    const mode = this._specialMode()
+    if (!engine || !mode) return
+    const grounded = this.bot.entity?.onGround === true
+    if (mode === 'mace' && grounded && distance > (engine.mace?.settings?.maxRange || 10)) {
+      this._approach(entity, 7)
+      return
+    }
+    if (mode === 'spear' && grounded && distance > (engine.settings?.chargeRange || 12)) {
+      this._approach(entity, 10)
+      return
+    }
+    // Di dalam jendela combo, engine menjadi satu-satunya pemilik look/jump.
+    // Pathfinder yang masih berjalan akan menimpa pitch bawah wind charge.
+    this._stopPath()
   }
 
   _health () {
@@ -493,11 +522,11 @@ class PlayerHunter {
     }
   }
 
-  _approach (entity) {
+  _approach (entity, followRange = null) {
     const now = Date.now()
     if (now < this.nextApproachAt) return
     this.nextApproachAt = now + (Number(this.settings.approachRefreshMs) || 800)
-    const range = Math.max(1, Number(this.settings.meleeRange) - 1)
+    const range = followRange === null ? Math.max(1, Number(this.settings.meleeRange) - 1) : followRange
     try {
       this.bot.pathfinder?.setGoal?.(new goals.GoalFollow(entity, range), true)
     } catch (err) {

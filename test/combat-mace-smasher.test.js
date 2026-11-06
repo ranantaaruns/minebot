@@ -45,18 +45,34 @@ function fakeBot ({ onGround = true } = {}) {
 
 const target = () => ({ position: new Vec3(0, 64, 6), velocity: new Vec3(0, 0, 0), height: 1.8 })
 
-test('launch: lompat dulu, lalu pitch ke bawah, pakai wind charge, pindah ke slot 0', async () => {
+async function driveLaunch (bot, promise) {
+  for (let i = 0; i < 3; i++) {
+    await new Promise(resolve => setTimeout(resolve, 5))
+    bot.emit('physicsTick')
+  }
+  return promise
+}
+
+test('launch: hadap bawah dulu, lompat, pakai wind charge, pindah ke slot 0', async () => {
   const bot = fakeBot()
+  const order = []
+  let stopped = 0
+  bot.pathfinder = { stop: () => { stopped++ } }
+  const originalLook = bot.look
+  bot.look = async (yaw, pitch) => { order.push('look'); await originalLook(yaw, pitch) }
+  const originalControl = bot.setControlState
+  bot.setControlState = (key, value) => {
+    if (key === 'jump' && value) order.push('jump')
+    originalControl(key, value)
+  }
+  bot.activateItem = () => { order.push('throw'); bot.activations++ }
   const loadout = new HotbarLoadout(bot, {})
   const mace = new MaceSmasher(bot, loadout, silent, {})
 
-  const p = mace.launch(target())
-  await new Promise(r => setTimeout(r, 5))
-  bot.emit('physicsTick')
-  await new Promise(r => setTimeout(r, 5))
-  bot.emit('physicsTick')
-  await p
+  await driveLaunch(bot, mace.launch(target()))
 
+  assert.equal(stopped, 1, 'pathfinder tidak boleh melawan arah pandang combo')
+  assert.deepEqual(order, ['look', 'jump', 'throw'])
   assert.equal(bot.controls.jump, false, 'jump dilepas setelah 1 tick')
   assert.ok(bot.lookCalls.length >= 1)
   assert.ok(Math.abs(bot.lookCalls[0][1] - (-Math.PI / 2)) < 1e-6, 'pitch menghadap ke bawah')
@@ -127,12 +143,7 @@ test('hasWindBurst membaca enchant mace dengan aman', () => {
 test('launch memaksa pitch -90 derajat (straight down) sebelum wind charge', async () => {
   const bot = fakeBot()
   const mace = new MaceSmasher(bot, new HotbarLoadout(bot, {}), silent, {})
-  const p = mace.launch(target())
-  await new Promise(r => setTimeout(r, 5))
-  bot.emit('physicsTick')
-  await new Promise(r => setTimeout(r, 5))
-  bot.emit('physicsTick')
-  await p
+  await driveLaunch(bot, mace.launch(target()))
   assert.ok(bot.lookCalls.length >= 1)
   assert.ok(Math.abs(bot.lookCalls[0][1] - (-Math.PI / 2)) < 1e-6)
 })
@@ -142,11 +153,14 @@ test('launch tidak mengirim release_use_item untuk wind charge', async () => {
   let releases = 0
   bot.deactivateItem = () => { releases++ }
   const mace = new MaceSmasher(bot, new HotbarLoadout(bot, {}), silent, {})
-  const p = mace.launch(target())
-  await new Promise(r => setTimeout(r, 5))
-  bot.emit('physicsTick')
-  await new Promise(r => setTimeout(r, 5))
-  bot.emit('physicsTick')
-  await p
+  await driveLaunch(bot, mace.launch(target()))
   assert.equal(releases, 0)
+})
+
+test('launch tetap tersedia saat target berada di jarak melee dan punya cooldown anti-spam', async () => {
+  const bot = fakeBot()
+  const mace = new MaceSmasher(bot, new HotbarLoadout(bot, {}), silent, {})
+  assert.equal(mace.canLaunch({ distance: 2, dy: 0 }), true)
+  await driveLaunch(bot, mace.launch(target()))
+  assert.equal(mace.canLaunch({ distance: 2, dy: 0 }), false, 'tidak membakar semua charge bila server menolak launch')
 })

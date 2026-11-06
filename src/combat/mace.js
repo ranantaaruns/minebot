@@ -59,10 +59,11 @@ class MaceSmasher {
     this.loadout = loadout
     this.logger = logger
     this.settings = {
-      minRange: 4,
+      minRange: 0,
       maxRange: 10,
       minDy: -1,
       maxDy: 2,
+      launchCooldownMs: 750,
       smashRange: 3.2,
       minFall: 1.5,
       chain: true,
@@ -73,9 +74,11 @@ class MaceSmasher {
     this.stats = { launches: 0, smashes: 0, chains: 0, clutches: 0 }
     this.chainCount = 0
     this.prevVelocityY = 0
+    this.nextLaunchAt = 0
   }
 
   canLaunch (context = {}) {
+    if (Date.now() < this.nextLaunchAt) return false
     return inLaunchWindow({
       ...context,
       mace: this.loadout.has(TAGS.MACE),
@@ -109,21 +112,25 @@ class MaceSmasher {
     await bot.lookAt(bot.entity.position.offset(0, -100, 0), true)
   }
 
-  // Urutan: lompat -> 1 tick -> pitch 90° ke bawah -> wind charge -> tunggu
-  // 1 tick agar use_item benar-benar diproses -> pindah ke slot mace.
-  // Jangan kirim deactivateItem: itu release_use_item untuk bow, bukan throw.
+  // Urutan: hentikan pathfinder -> pilih wind charge -> hadap tepat ke bawah
+  // -> tunggu 1 tick agar rotasi terkirim -> lompat 1 tick -> lempar -> mace.
+  // Rotasi dikirim juga oleh paket use_item pada 1.21.11. Jangan kirim
+  // deactivateItem: itu release_use_item untuk bow, bukan throw.
   async launch (target) {
     const bot = this.bot
     if (bot.entity?.onGround !== true) return false
+    try { bot.pathfinder?.stop?.() } catch {}
     await this.loadout.arrange()
     if (!(await this.loadout.select(TAGS.WIND_CHARGE))) {
       this.logger?.debug?.('Mace: wind charge tidak ada, peluncuran dilewati')
       return false
     }
+    this.nextLaunchAt = Date.now() + this.settings.launchCooldownMs
+    await this.lookStraightDown()
+    await nextTick(bot, 1)
     bot.setControlState('jump', true)
     await nextTick(bot, 1)
     bot.setControlState('jump', false)
-    await this.lookStraightDown()
     bot.activateItem()
     await nextTick(bot, 1)
     await this.loadout.select(TAGS.MACE)
