@@ -44,7 +44,10 @@ class SwarmManager {
   }
 
   async start () {
-    const staggerMs = Number(this.baseConfig.swarm?.staggerDelayMs ?? 1500)
+    const configStagger = this.baseConfig.swarm?.staggerDelayMs
+    const staggerMs = configStagger !== undefined
+      ? Number(configStagger)
+      : (this.sessions.length > 10 ? 400 : 1500)
     for (let i = 0; i < this.sessions.length; i++) {
       const session = this.sessions[i]
       session.connect().catch(err => {

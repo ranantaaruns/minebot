@@ -139,3 +139,37 @@ test('loadConfig menyediakan dan memvalidasi opsi combat.hunt', () => {
   })
   fs.rmSync(invalid.dir, { recursive: true, force: true })
 })
+
+test('loadConfig mendukung swarm sampai 50 bot', () => {
+  const defaults = writeConfig(baseConfig())
+  const config = loadConfig(defaults.file)
+  assert.equal(config.swarm.maxBots, 50)
+  fs.rmSync(defaults.dir, { recursive: true, force: true })
+
+  const many = writeConfig(baseConfig({
+    swarm: { maxBots: 50 },
+    bots: Array.from({ length: 50 }, (_, i) => ({ username: `Bot${i + 1}` }))
+  }))
+  const parsed = loadConfig(many.file)
+  assert.equal(parsed.swarm.maxBots, 50)
+  fs.rmSync(many.dir, { recursive: true, force: true })
+
+  const tooMany = writeConfig(baseConfig({
+    swarm: { maxBots: 50 },
+    bots: Array.from({ length: 51 }, (_, i) => ({ username: `Bot${i + 1}` }))
+  }))
+  assert.throws(() => loadConfig(tooMany.file), err => {
+    assert.equal(err.code, 'CONFIG_INVALID')
+    assert.match(err.message, /swarm\.maxBots/)
+    return true
+  })
+  fs.rmSync(tooMany.dir, { recursive: true, force: true })
+
+  const badMax = writeConfig(baseConfig({ swarm: { maxBots: 51 } }))
+  assert.throws(() => loadConfig(badMax.file), err => {
+    assert.equal(err.code, 'CONFIG_INVALID')
+    assert.match(err.message, /swarm\.maxBots/)
+    return true
+  })
+  fs.rmSync(badMax.dir, { recursive: true, force: true })
+})

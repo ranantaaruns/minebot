@@ -9,11 +9,13 @@ async function promptSwarmConfig (baseConfig) {
     !process.env.CI
 
   const baseUsername = baseConfig.bot?.username || 'mcbot'
-  const defaultCount = Math.max(1, Number(baseConfig.bot?.count) || 1)
+  const maxBots = Math.min(50, Math.max(1, Number(baseConfig.swarm?.maxBots) || 50))
+  const requestedCount = Math.max(1, Number(baseConfig.bot?.count) || 1)
+  const defaultCount = Math.min(requestedCount, maxBots)
 
   if (!isInteractive) {
     if (Array.isArray(baseConfig.bots) && baseConfig.bots.length > 0) {
-      return baseConfig.bots.map((b, i) => ({
+      return baseConfig.bots.slice(0, maxBots).map((b, i) => ({
         username: b.username || (i === 0 ? baseUsername : `${baseUsername}_${i + 1}`)
       }))
     }
@@ -41,12 +43,12 @@ async function promptSwarmConfig (baseConfig) {
     console.log(`Owner : ${baseConfig.owner.username}`)
     console.log('----------------------------------------------------')
 
-    const ansCount = await ask(`Jumlah bot yang ingin dimasukkan (1-10) [default: ${defaultCount}]: `)
+    const ansCount = await ask(`Jumlah bot yang ingin dimasukkan (1-${maxBots}) [default: ${defaultCount}]: `)
     let count = parseInt(ansCount.trim(), 10)
     if (!Number.isFinite(count) || count < 1) {
       count = defaultCount
     }
-    count = Math.min(Math.max(1, count), 10)
+    count = Math.min(Math.max(1, count), maxBots)
 
     const botConfigs = []
     for (let i = 0; i < count; i++) {

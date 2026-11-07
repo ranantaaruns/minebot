@@ -117,7 +117,11 @@
       "lavaCooldownMs": 12000,
       "lavaBurnTicks": 8,
       "lavaRange": 3.2,
-      "lavaPickupAttempts": 3
+      "lavaPickupAttempts": 3,
+      "orbitEnabled": true,
+      "orbitSpeed": 2.5,
+      "orbitRadius": 2.8,
+      "orbitDirection": 1
     }
   },
   "storage": {
@@ -200,5 +204,12 @@
   "logging": {
     "debug": false,
     "chat": true
+  },
+  "swarm": {
+    "staggerDelayMs": 1500,
+    "deliverOnGather": true,
+    "tossDistance": 2.5,
+    "gatherRounds": 2,
+    "maxBots": 50
   }
 }

@@ -12,7 +12,8 @@ const DEFAULTS = {
   },
   bot: {
     username: 'BuilderBot',
-    auth: 'offline'
+    auth: 'offline',
+    count: 1
   },
   physics: {
     paperCollisionFix: true,
@@ -124,6 +125,10 @@ const DEFAULTS = {
       lavaBurnTicks: 8,
       lavaRange: 3.2,
       lavaPickupAttempts: 3,
+      orbitEnabled: true,
+      orbitSpeed: 2.5,
+      orbitRadius: 2.8,
+      orbitDirection: 1,
       shieldBreakEnabled: true,
       shieldBreakPunishMs: 5000,
       shieldBreakWindowMs: 1500
@@ -283,7 +288,8 @@ const DEFAULTS = {
     staggerDelayMs: 1500,
     deliverOnGather: true,
     tossDistance: 2.5,
-    gatherRounds: 2
+    gatherRounds: 2,
+    maxBots: 50
   }
 }
 
@@ -402,7 +408,7 @@ function validate (config) {
     if (!isObject(config.combat.hunt)) {
       errors.push('combat.hunt harus berupa object')
     } else {
-      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts']) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts', 'orbitSpeed', 'orbitRadius', 'orbitDirection']) {
         const value = Number(config.combat.hunt[key])
         if (!Number.isFinite(value) || value <= 0) {
           errors.push(`combat.hunt.${key} harus lebih dari 0`)
@@ -515,6 +521,13 @@ function validate (config) {
     if (!Number.isFinite(Number(config.swarm.staggerDelayMs)) || Number(config.swarm.staggerDelayMs) < 0) {
       errors.push('swarm.staggerDelayMs harus angka 0 atau lebih')
     }
+    const maxBots = Number(config.swarm.maxBots)
+    if (!Number.isInteger(maxBots) || maxBots < 1 || maxBots > 50) {
+      errors.push('swarm.maxBots harus bilangan bulat 1-50')
+    }
+    if (Array.isArray(config.bots) && config.bots.length > maxBots) {
+      errors.push(`bots tidak boleh lebih dari swarm.maxBots (${maxBots})`)
+    }
   }
   return errors
 }
@@ -589,7 +602,7 @@ function loadConfig (configPath) {
       }
     }
     if (isObject(config.combat.hunt)) {
-      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts']) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts', 'orbitSpeed', 'orbitRadius', 'orbitDirection']) {
         config.combat.hunt[key] = Number(config.combat.hunt[key])
       }
     }

@@ -627,9 +627,14 @@ Kalau perintah dijalankan lewat swarm, sisa kuota yang belum terpenuhi dibagi la
 
 ```json
 "swarm": {
-  "gatherRounds": 2
+  "gatherRounds": 2,
+  "maxBots": 50
 }
 ```
+
+`swarm.maxBots` membatasi jumlah bot dalam satu proses (1–50, default 50). Prompt launcher menawarkan `1-<maxBots>`, daftar `bots` di config dipotong ke batas ini, dan `bot.count` non-interaktif juga dibatasi ke nilai yang sama. Kalau `staggerDelayMs` tidak diisi, swarm dengan lebih dari 10 bot memakai jeda 400 ms (bukan 1500 ms) supaya 50 bot tidak butuh 75 detik untuk mulai connect.
+
+Catatan: batas 50 adalah batas sisi bot. Server tetap punya batasnya sendiri — vanilla menolak player ke-21, jadi 50 bot butuh server yang menaikkan `max-players` (Paper/Purpur: `settings.max-players` atau `max-players` di `server.properties`) dan kapasitas CPU/RAM yang memadai.
 
 ## Membersihkan penghalang chest
 
