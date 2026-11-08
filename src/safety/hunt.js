@@ -110,6 +110,11 @@ class PlayerHunter {
       critTickMs: 20,
       critRiseTimeoutMs: 250,
       critFallTimeoutMs: 500,
+      orbitEnabled: true,
+      orbitSpeed: 2.5,
+      orbitRadius: 2.8,
+      orbitDirection: 1,
+      orbitFlipMs: 2000,
       lavaEnabled: true,
       lavaCooldownMs: 12000,
       lavaBurnTicks: 8,
@@ -190,6 +195,7 @@ class PlayerHunter {
       this.logger?.info(`Mulai menyerang ${target}`)
       return await this._loop(target, stats, cancellation, deadline, () => dead)
     } finally {
+      this._stopOrbit()
       this._stopPath()
       this.shield.stop()
       await this.lava?.recover?.().catch(() => false)
@@ -223,6 +229,7 @@ class PlayerHunter {
 
       // Darah sekarat: mundur dulu, makan sampai pulih, baru lanjut menyerang.
       if (this._shouldRetreat()) {
+        this._stopOrbit()
         await this._retreat(entity, stats, cancellation)
         continue
       }
@@ -236,14 +243,23 @@ class PlayerHunter {
       this.shield.setTarget(entity)
       await this.shield.update(entity, distance)
 
+      // Orbit mengelilingi lawan berjalan bersamaan dengan pukulan, bukan
+      // hanya saat mendekat: inilah yang membuat bot sulit dipukul balik.
+      const orbiting = await this._orbit(entity, distance)
+
       if (distance <= Number(this.settings.meleeRange)) {
         this._stopPath()
         if (await this.lava.tryAttack(entity)) stats.lava = (stats.lava || 0) + 1
         if (await this.attackMelee(entity, distance, stats)) stats.hits++
       } else if (this._bowReady() && distance <= Number(this.settings.bowRange)) {
+        this._stopOrbit()
         this._stopPath()
         if (await this.shoot(entity, distance, cancellation)) stats.shots++
+      } else if (orbiting) {
+        // Sedang mengelilingi: pathfinder tidak boleh menyeret bot ke target.
+        this._stopPath()
       } else {
+        this._stopOrbit()
         this._approach(entity)
       }
 
@@ -442,6 +458,59 @@ class PlayerHunter {
       this.logger?.debug(`Equip senjata gagal: ${err.message}`)
       return null
     }
+  }
+
+  // Orbit/strafe saat combat normal: mengelilingi lawan sambil tetap memukul
+  // sehingga lawan harus terus memutar badan untuk membidik bot.
+  async _orbit (entity, distance = null) {
+    const bot = this.bot
+    if (this.settings.orbitEnabled === false) return false
+    if (!bot.entity || !entity?.position) return false
+    // Jangan menekan tombol gerak saat makan: sprint/langkah membatalkan
+    // bot.consume() dan bot mati kelaparan di tengah duel.
+    if (bot.foodManager?.eating || bot.foodManager?.consuming || bot.usingHeldItem) return false
+
+    const range = Number(distance ?? bot.entity.position.distanceTo(entity.position))
+    const radius = Number(this.settings.orbitRadius) || 2.8
+    if (!Number.isFinite(range) || range > radius + 2.5) return false
+
+    const now = Date.now()
+    if (!this._orbitSide) this._orbitSide = this.settings.orbitDirection >= 0 ? 'right' : 'left'
+    const flipMs = Number(this.settings.orbitFlipMs) || 2000
+    if (!this._orbitFlipAt) this._orbitFlipAt = now + flipMs
+    if (now >= this._orbitFlipAt) {
+      this._orbitSide = this._orbitSide === 'right' ? 'left' : 'right'
+      this._orbitFlipAt = now + flipMs
+    }
+
+    try {
+      const height = (Number(entity.height) || 1.8) * 0.8
+      await bot.lookAt(entity.position.offset(0, height, 0), true)
+      // Menjaga jarak di sekitar radius: maju kalau terlalu jauh, mundur kalau
+      // terlalu dekat, dan selalu strafe ke samping supaya membentuk lingkaran.
+      bot.setControlState('forward', range > radius + 0.3)
+      bot.setControlState('back', range < radius - 0.7)
+      bot.setControlState(this._orbitSide, true)
+      bot.setControlState(this._orbitSide === 'right' ? 'left' : 'right', false)
+      this._orbitActive = true
+      return true
+    } catch (err) {
+      this.logger?.debug(`Orbit gagal: ${err.message}`)
+      return false
+    }
+  }
+
+  _stopOrbit (force = true) {
+    if (!this._orbitActive) return
+    this._orbitActive = false
+    try {
+      // Hanya tombol yang kita tekan sendiri; kontrol milik pathfinder tidak
+      // disentuh supaya navigasi lain tidak ikut berhenti.
+      this.bot.setControlState('forward', false)
+      this.bot.setControlState('back', false)
+      this.bot.setControlState('left', false)
+      this.bot.setControlState('right', false)
+    } catch {}
   }
 
   async attackMelee (entity, distance, stats = null) {

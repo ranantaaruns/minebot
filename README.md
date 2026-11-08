@@ -474,6 +474,39 @@ Makan berjalan **bersamaan** dengan lari: begitu food di bawah 20 (atau apel ema
 
 Setiap kali memukul, bot melompat lalu menahan pukulan sampai **badannya sedang turun** (`velocity.y < 0`, tidak menyentuh tanah). Itu syarat critical hit di Minecraft, jadi damage tiap pukulan naik sekitar 50%. Bot tidak mencoba crit saat di air/lava, di tangga, atau saat sprint — di kondisi itu crit tidak sah, jadi bot memukul biasa tanpa membuang waktu. Kalau lompatan gagal (langit-langit rendah, terhalang blok) atau lawan kabur dari jangkauan, bot langsung memukul normal dalam tick yang sama, jadi tidak ada pukulan yang hilang. Jumlah crit dilaporkan di akhir job: `Target X mati (12 pukulan, 9 kritikal, 0 panah, 14.2s)`.
 
+### Orbit mengelilingi lawan (pedang)
+
+Selama mode `weapon normal`, bot **mengelilingi lawan sambil tetap memukul** (circle strafe), bukan berdiri diam berhadap-hadapan. Arah putaran dibalik setiap `orbitFlipMs` supaya sulit ditebak, dan jarak dijaga di sekitar `orbitRadius`: bot maju kalau terlalu jauh dan mundur kalau terlalu dekat. Orbit berhenti otomatis saat bot makan, saat membidik dengan panah, saat darah rendah dan bot mundur, serta begitu job selesai — semua tombol gerak dilepas kembali.
+
+```json
+"combat": {
+  "hunt": {
+    "orbitEnabled": true,
+    "orbitRadius": 2.8,
+    "orbitDirection": 1,
+    "orbitFlipMs": 2000
+  }
+}
+```
+
+`orbitDirection: 1` memutar ke kanan, `-1` ke kiri. `orbitEnabled: false` mengembalikan gaya lama (maju lurus ke target).
+
+### Lava bucket sekali pakai, diambil kembali
+
+Kalau mode `weapon normal` dan bot membawa `lava_bucket`, bot menumpahkan lava di kaki lawan (maksimal `lavaRange` blok, tidak pernah terlalu dekat dengan dirinya sendiri), membiarkannya membakar selama `lavaBurnTicks`, lalu **mengambil kembali sumber lava** sehingga bucket tidak hilang. Penempatan dibatalkan kalau posisi berair, dan keberhasilan dicek dua sisi: blok sumber sudah hilang *dan* `lava_bucket` benar-benar kembali ke inventory. Sisa lava yang gagal diambil dibersihkan lagi saat job berakhir.
+
+```json
+"combat": {
+  "hunt": {
+    "lavaEnabled": true,
+    "lavaCooldownMs": 12000,
+    "lavaBurnTicks": 8,
+    "lavaRange": 3.2,
+    "lavaPickupAttempts": 3
+  }
+}
+```
+
 Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. ### Strategi mematahkan shield lawan
 
 Kalau lawan memegang shield dan memblok, bot tidak membuang pukulan ke dinding: ia beralih ke **kapak**. Satu pukulan kapak mematikan shield lawan selama 5 detik (mekanik vanilla), dan begitu shield mati bot langsung kembali ke **pedang** untuk memakai jendela 5 detik itu sepenuhnya. Alurnya:

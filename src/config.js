@@ -126,6 +126,7 @@ const DEFAULTS = {
       lavaRange: 3.2,
       lavaPickupAttempts: 3,
       orbitEnabled: true,
+      orbitFlipMs: 2000,
       orbitSpeed: 2.5,
       orbitRadius: 2.8,
       orbitDirection: 1,
@@ -409,7 +410,7 @@ function validate (config) {
     if (!isObject(config.combat.hunt)) {
       errors.push('combat.hunt harus berupa object')
     } else {
-      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts', 'orbitSpeed', 'orbitRadius', 'orbitDirection']) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts', 'orbitSpeed', 'orbitRadius', 'orbitFlipMs']) {
         const value = Number(config.combat.hunt[key])
         if (!Number.isFinite(value) || value <= 0) {
           errors.push(`combat.hunt.${key} harus lebih dari 0`)
@@ -526,6 +527,9 @@ function validate (config) {
     if (!Number.isInteger(maxBots) || maxBots < 1 || maxBots > 50) {
       errors.push('swarm.maxBots harus bilangan bulat 1-50')
     }
+    if (config.combat?.hunt && ![1, -1].includes(Number(config.combat.hunt.orbitDirection))) {
+      errors.push('combat.hunt.orbitDirection harus 1 (kanan) atau -1 (kiri)')
+    }
     if (Array.isArray(config.bots) && config.bots.length > maxBots) {
       errors.push(`bots tidak boleh lebih dari swarm.maxBots (${maxBots})`)
     }
@@ -603,7 +607,7 @@ function loadConfig (configPath) {
       }
     }
     if (isObject(config.combat.hunt)) {
-      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts', 'orbitSpeed', 'orbitRadius', 'orbitDirection']) {
+      for (const key of ['meleeRange', 'bowRange', 'drawMs', 'drawMarginMs', 'aimHeightRatio', 'aimLeadTicks', 'tickMs', 'timeoutMs', 'lavaCooldownMs', 'lavaBurnTicks', 'lavaRange', 'lavaPickupAttempts', 'orbitSpeed', 'orbitRadius', 'orbitFlipMs']) {
         config.combat.hunt[key] = Number(config.combat.hunt[key])
       }
     }

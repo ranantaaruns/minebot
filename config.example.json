@@ -121,7 +121,8 @@
       "orbitEnabled": true,
       "orbitSpeed": 2.5,
       "orbitRadius": 2.8,
-      "orbitDirection": 1
+      "orbitDirection": 1,
+      "orbitFlipMs": 2000
     }
   },
   "storage": {
