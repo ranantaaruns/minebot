@@ -60,6 +60,10 @@ class ElytraFlyer {
     this.stats.takeoffs++
     this.lastBoost = 0
     this.lastTakeoffAt = Date.now()
+    // Rocket tepat setelah paket glide: tanpa ini bot yang berdiri di tanah
+    // datar tidak pernah memperoleh ketinggian, sehingga glide tidak pernah
+    // aktif dan spear tidak pernah bisa charge.
+    await this.boost().catch(() => false)
     return true
   }
 
@@ -115,6 +119,9 @@ class ElytraFlyer {
 
   async attackRun (target) {
     const bot = this.bot
+    if (this.takeoffBlockedUntil && Date.now() < this.takeoffBlockedUntil) {
+      return { ok: false, phase: 'blocked' }
+    }
     if (bot.entity?.onGround === true || !this.flying) {
       // Metadata elytra menyusul beberapa tick setelah entity_action. Jangan
       // mengirim takeoff berulang selama menunggu server mengonfirmasi glide.
@@ -123,6 +130,18 @@ class ElytraFlyer {
       }
       const ok = await this.takeOff()
       this.phase = ok ? 'takeoff' : 'idle'
+      // Gagal terus (ruang sempit, langit-langit rendah, server menolak glide)
+      // tidak boleh membanjiri server dengan paket setiap 800 ms.
+      if (!ok) {
+        this.takeoffFailures = (this.takeoffFailures || 0) + 1
+        if (this.takeoffFailures >= 4) {
+          this.takeoffBlockedUntil = Date.now() + 5000
+          this.takeoffFailures = 0
+          this.logger?.warn('Elytra gagal aktif beberapa kali; menunggu 5 detik (butuh ruang terbuka)')
+        }
+      } else {
+        this.takeoffFailures = 0
+      }
       return { ok: false, phase: ok ? 'takeoff' : 'failed' }
     }
     const dist = bot.entity.position.distanceTo(target.position)

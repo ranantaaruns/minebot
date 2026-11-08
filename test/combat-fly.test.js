@@ -154,8 +154,8 @@ test('land memasang kembali chestplate', async () => {
   const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, {})
   await flyer.takeOff()
   await flyer.land()
-  const names = bot.equipCalls.map(c => c[0])
-  assert.deepEqual(names, ['elytra', 'netherite_chestplate'])
+  const names = bot.equipCalls.filter(c => c[1] === 'torso').map(c => c[0])
+  assert.deepEqual(names, ['elytra', 'netherite_chestplate'], 'zirah diganti elytra lalu dikembalikan')
 })
 
 test('attackRun membuka elytra dulu saat masih di tanah', async () => {
@@ -243,4 +243,32 @@ test('strike memakai kecepatan relatif terhadap target', async () => {
   const result = await flyer.attackRun(target)
   assert.equal(bot.attacks.length, 0, 'target secepat bot membuat kecepatan relatif nol')
   assert.notEqual(result.ok, true)
+})
+
+test('takeOff memakai rocket tepat setelah paket glide supaya bot naik', async () => {
+  const bot = fakeBot()
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, {})
+  const p = flyer.takeOff()
+  await new Promise(r => setTimeout(r, 5))
+  bot.emit('physicsTick')
+  bot.emit('physicsTick')
+  assert.equal(await p, true)
+  assert.equal(bot.writes.length, 1, 'paket start_fall_flying dikirim')
+  assert.equal(bot.activations, 1, 'rocket dinyalakan untuk memperoleh ketinggian')
+  assert.equal(flyer.stats.boosts, 1)
+})
+
+test('takeoff yang gagal berulang dibatasi supaya tidak spam paket', async () => {
+  const bot = fakeBot()
+  const target = { position: new Vec3(0, 70, 20), velocity: new Vec3(0, 0, 0), height: 1.8 }
+  const flyer = new ElytraFlyer(bot, new HotbarLoadout(bot, {}), silent, {})
+  flyer.takeOff = async () => false
+  flyer.lastTakeoffAt = 0
+  for (let i = 0; i < 4; i++) {
+    flyer.lastTakeoffAt = 0
+    await flyer.attackRun(target)
+  }
+  assert.ok(flyer.takeoffBlockedUntil > Date.now(), 'ada masa tunggu setelah gagal beruntun')
+  const result = await flyer.attackRun(target)
+  assert.equal(result.phase, 'blocked')
 })

@@ -37,6 +37,8 @@ const DEFAULTS = {
   owner: {
     username: '',
     autoFollow: true,
+    syncBedSpawn: true,
+    bedSearchRadius: 6,
     followDistance: 3,
     stuckTimeoutMs: 4000,
     maxStuckRetries: 2,
@@ -97,7 +99,9 @@ const DEFAULTS = {
       chargeRange: 12,
       flyRange: 15,
       leadTicks: 1,
-      maxChains: 3
+      maxChains: 3,
+      rotationTicks: 2,
+      liftoffTicks: 6
     },
     hunt: {
       meleeRange: 3.2,
@@ -579,6 +583,7 @@ function loadConfig (configPath) {
   config.physics.playerHeight = Number(config.physics.playerHeight)
   config.owner.followDistance = Number(config.owner.followDistance)
   config.owner.stuckTimeoutMs = Number(config.owner.stuckTimeoutMs)
+  config.owner.bedSearchRadius = Math.max(1, Number(config.owner.bedSearchRadius) || 6)
   config.owner.maxStuckRetries = Number(config.owner.maxStuckRetries)
   config.owner.stuckCooldownMs = Number(config.owner.stuckCooldownMs)
   config.owner.towerPlaceCost = Number(config.owner.towerPlaceCost)

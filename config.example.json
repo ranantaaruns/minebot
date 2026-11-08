@@ -48,6 +48,8 @@
   "owner": {
     "username": "NamaKamu",
     "autoFollow": true,
+    "syncBedSpawn": true,
+    "bedSearchRadius": 6,
     "followDistance": 3,
     "stuckTimeoutMs": 4000,
     "maxStuckRetries": 2,

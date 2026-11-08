@@ -42,6 +42,7 @@ Edit `config.json`:
 - `owner.username` adalah username Anda, bukan username bot.
 - Kalau server memakai format register/login lain, ubah `registerCommand` / `loginCommand`. Placeholder `{password}` akan diganti otomatis.
 - `owner.autoFollow: true` membuat bot mendekat saat owner terlihat, atau saat owner mengirim koordinat di chat/whisper.
+- `owner.syncBedSpawn: true` (default) membuat bot **ikut set spawn saat owner tidur di kasur**. Bot mendeteksi event tidur owner, berjalan ke kasurnya, lalu tidur di sana. Vanilla hanya mengizinkan satu pemain per kasur, jadi kalau kasur owner sedang dipakai, bot otomatis memakai kasur kosong terdekat (`owner.bedSearchRadius`, default 6 blok) supaya titik spawn-nya tetap di tempat yang sama; kalau tidak ada kasur kosong, bot hanya memperingatkan dan tidak memindahkan spawn-nya. Fitur ini juga aktif di setiap bot swarm.
 
 ## Menjalankan
 
