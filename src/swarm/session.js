@@ -3,6 +3,7 @@
 const { createBot, startAntiAfk } = require('../bot')
 const { AuthManager } = require('../auth')
 const { OwnerTracker } = require('../owner')
+const { BedSpawnSync } = require('../owner-bed')
 const { GamemodeManager } = require('../gamemode')
 const { WaterNavigator } = require('../navigation/water')
 const { LadderNavigator } = require('../navigation/ladder')
@@ -33,6 +34,7 @@ class BotSession {
     this.dialog = null
     this.navMaterials = null
     this.towerSupply = null
+    this.bedSync = null
 
     this.quitting = false
     this.attempts = 0
@@ -84,6 +86,10 @@ class BotSession {
     })
     this.owner.pause()
     this.owner.start()
+
+    // Ikut set spawn saat owner tidur di kasur.
+    this.bedSync = new BedSpawnSync(bot, this.config.owner, this.logger)
+    this.bedSync.start()
 
     this.water = new WaterNavigator(bot, this.config, this.logger, {
       getTarget: () => {
@@ -156,6 +162,7 @@ class BotSession {
       this.bot = null
       this.auth?.stop()
       this.gamemode = null
+      this.bedSync?.stop()
       this.owner?.stop()
       this.dialog?.stop()
       this.dialog = null
