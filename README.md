@@ -579,6 +579,8 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
 - Kalau sisa blok ada di samping (cabang), bot mencari posisi berdiri yang benar-benar kosong di sekitar blok lalu berjalan ke sana. Posisi berdiri ini juga dipakai saat menambang, sehingga trunk 2×2 dark oak tidak lagi gagal dengan `unreachable`.
 - Kalau satu pohon sudah habis, bot pindah ke pohon terdekat berikutnya yang belum diklaim. Blok pohon kandidat dicek ulang sebelum ditebang (pohon bisa sudah dihabisi bot lain), dan radius pencarian melebar otomatis (48 → 72 → 108 → 128 blok) kalau pohon di sekitar sudah habis.
 - **Menembus daun**: log dark oak sering tertutup kanopi. Kalau sebuah log gagal dijangkau, bot menelusuri garis pandang dari matanya ke blok itu dan menebang blok daun yang menghalangi (maksimal 8 daun, 2 percobaan per blok), lalu mencoba log yang sama lagi. Kalau bot benar-benar berhenti di dalam kanopi, blok daun di sekitarnya ikut dibuka (`clearLeavesAround`) sebelum bot menyerah.
+- **Hanya pohon asli**: kandidat log tanpa daun di sekitar puncaknya, dengan fondasi bukan tanah, atau dikelilingi material bangunan (papan, pintu, kaca, pagar, cobblestone) dianggap tiang rumah dan dilewati (`tree.naturalOnly: false` untuk mematikannya). Bot tidak lagi membongkar rumah village saat disuruh mengumpulkan kayu. Setelah job selesai bot juga menyapu drop log terakhir supaya tidak ada yang tertinggal di tanah.
+- **Chest tidak dihancurkan**: saat membersihkan penghalang di atas chest, bot menolak menggali chest/barrel/shulker/crafting table/furnace/bed/sign dan blok bernilai lain. Penghalang seperti itu dilewati dan dicatat di log.
 - **Log di tanah diambil dulu**: log yang hancur jatuh sebagai item. Bot mendekati setiap drop log/sapling dalam `collectRadius` sebelum menghitung progres, karena inventory baru bertambah setelah item terangkat. Tanpa ini bot merasa masih kurang dan terus mencari pohon baru sementara tumpukan log tertinggal di tanah.
 - **Blok hantu tidak lagi memblokir bot**: blok yang sudah tidak ada di dunia dibuang dari daftar sisa pohon (`gone`), bukan dihitung sebagai kegagalan. Dulu blok seperti ini membuat bot berdiri diam menunggu blok yang sudah tidak ada.
 - **Menanam ulang**: setelah satu pohon selesai, bot menanam kembali sapling yang didapat dari daun yang ditebang. Dark oak (dan pohon 2×2 lain) butuh 4 sapling dalam kotak 2×2 — kalau sapling kurang dari 4, bot tidak menanam setengah-setengah. Pohon 1×1 cukup 1 sapling.
@@ -588,6 +590,7 @@ Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot 
 "gather": {
   "tree": {
     "enabled": true,
+    "naturalOnly": true,
     "scanRadius": 48,
     "maxScanRadius": 128,
     "minTreeSize": 4,

@@ -180,7 +180,10 @@
     "maxDepth": 8,
     "preferChests": true,
     "clearChestObstructions": true,
-    "clearHeight": 3
+    "clearHeight": 3,
+    "tree": {
+      "naturalOnly": true
+    }
   },
   "safety": {
     "autoEat": true,

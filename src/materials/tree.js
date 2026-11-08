@@ -228,6 +228,69 @@ function pickTree (trees, options = {}) {
   return fallback.length > 0 ? fallback[0] : null
 }
 
+// --- Pohon asli vs tiang bangunan ---------------------------------------
+// Log di rumah village juga cocok dengan filter "*_log", jadi tanpa penyaring
+// ini bot ikut membongkar rumah. Pohon asli punya daun di sekitar puncaknya;
+// kalau daun sudah habis, dasar batang harus tanah dan tidak boleh ada
+// material bangunan di sekelilingnya.
+const BUILDING_PATTERN = /(_planks|_door|_trapdoor|_fence|_fence_gate|_slab|_stairs|_glass|glass_pane|_wall|_carpet|_bed|bookshelf|crafting_table|ladder|torch|lantern|chain|iron_bars|stone_bricks|cobblestone|bricks|_sign)$/
+
+function isBuildingBlockName (name) {
+  const bare = bareName(name)
+  if (!bare) return false
+  return BUILDING_PATTERN.test(bare)
+}
+
+function hasLeavesNear (bot, point, options = {}) {
+  if (!point || typeof bot?.blockAt !== 'function') return false
+  const radius = Number(options.radius) || 5
+  // findBlocks dengan id daun jauh lebih murah daripada memindai kubus;
+  // kalau id tidak tersedia (bot palsu di tes) pakai pemindaian blok biasa.
+  if (Array.isArray(options.leafIds) && options.leafIds.length > 0 && typeof bot.findBlocks === 'function') {
+    try {
+      const found = bot.findBlocks({ matching: options.leafIds, point, maxDistance: radius, count: 1 }) || []
+      if (found.length > 0) return true
+      return false
+    } catch {}
+  }
+  const r = Math.min(4, radius)
+  for (let dx = -r; dx <= r; dx++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dz = -r; dz <= r; dz++) {
+        const block = bot.blockAt(point.offset(dx, dy, dz))
+        if (block && isLeafName(block.name)) return true
+      }
+    }
+  }
+  return false
+}
+
+function isNaturalTree (bot, tree, options = {}) {
+  if (options.naturalOnly === false) return true
+  const blocks = tree?.blocks || []
+  if (blocks.length === 0) return false
+  const top = blocks.reduce((a, b) => (b.y > a.y ? b : a), blocks[0])
+  const base = blocks.reduce((a, b) => (b.y < a.y ? b : a), blocks[0])
+
+  if (hasLeavesNear(bot, top, { radius: Number(options.leafRadius) || 6, leafIds: options.leafIds })) return true
+
+  const ground = bot.blockAt(base.offset(0, -1, 0))
+  if (!ground || !isSoil(ground)) return false
+  // Batang pendek tanpa daun hampir pasti sisa bangunan/pagar, bukan pohon.
+  if (blocks.length < 2) return false
+
+  const radius = Number(options.buildingRadius) || 3
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dz = -radius; dz <= radius; dz++) {
+      for (let dy = -1; dy <= Math.min(6, tree.height || 4); dy++) {
+        const block = bot.blockAt(base.offset(dx, dy, dz))
+        if (block && isBuildingBlockName(block.name)) return false
+      }
+    }
+  }
+  return true
+}
+
 function discoverTrees (bot, ids, options = {}) {
   const {
     radius = 64,
@@ -811,6 +874,11 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
   // scaffolding (itu mengurangi hasil yang dilaporkan ke owner).
   const scaffoldBlocks = tree.scaffoldBlocks || ['dirt', 'cobblestone', 'stone', bareName(itemName)]
 
+  // Id semua jenis daun, dipakai untuk memastikan kandidat benar-benar pohon.
+  const leafIds = (mcData.blocksArray || [])
+    .filter(b => isLeafName(b.name))
+    .map(b => b.id)
+
   if (typeof bot.pathfinder?.setMovements !== 'function') {
     logger?.debug('Pathfinder tidak siap; menebang hanya blok yang terjangkau')
   }
@@ -857,6 +925,13 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
       exclude,
       gap: tree.gap,
       logger
+    }).filter(candidate => {
+      // Hanya pohon sungguhan: tiang log rumah village / bangunan pemain
+      // tidak boleh ikut ditebang.
+      if (isNaturalTree(bot, candidate, { naturalOnly: tree.naturalOnly !== false, leafIds })) return true
+      exclude.add(candidate.id)
+      logger?.info(`Melewati ${candidate.id}: bukan pohon (tiang bangunan)`)
+      return false
     })
 
     if (trees.length === 0) {
@@ -987,6 +1062,25 @@ async function gatherLogs (bot, mcData, materials, itemName, count, options = {}
   }
 
   have = countItemName(bot, mcData, itemName)
+  // Sapuan terakhir: jangan tinggalkan drop log di tanah hanya karena kuota
+  // sudah terpenuhi atau loop berhenti di tengah jalan.
+  if (tree.collectDrops !== false && chopped > 0) {
+    try {
+      const swept = await collectDrops(bot, mcData, {
+        itemNames: [itemName, saplingNameFor(itemName)].filter(Boolean),
+        radius: Number(tree.collectRadius) || 12,
+        maxDrops: Number(tree.maxDrops) || 32,
+        perDropMs: Number(tree.collectPerDropMs) || 3000,
+        timeoutMs: Number(tree.collectTimeoutMs) || 20000,
+        logger,
+        cancellation
+      })
+      collectedDrops += swept
+      have = countItemName(bot, mcData, itemName)
+    } catch (err) {
+      logger?.debug(`Sapuan drop terakhir gagal: ${err.message}`)
+    }
+  }
   const out = {
     mined: have - before,
     have,
@@ -1022,6 +1116,9 @@ module.exports = {
   resetSharedClaims,
   pickTree,
   discoverTrees,
+  isNaturalTree,
+  isBuildingBlockName,
+  hasLeavesNear,
   climbOne,
   chopTree,
   gatherLogs,

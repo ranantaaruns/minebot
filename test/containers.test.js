@@ -96,3 +96,29 @@ test('openContainerAt clears the obstruction before opening', async () => {
   assert.equal(window.block, chest)
   assert.equal(bot.blockAt(dirt.position).name, 'air')
 })
+
+test('clearAbove tidak pernah menggali chest lain di atas chest', async () => {
+  const lower = { name: 'chest', position: new Vec3(1, 64, 0), diggable: true }
+  const upper = { name: 'chest', position: new Vec3(1, 65, 0), diggable: true }
+  const barrel = { name: 'barrel', position: new Vec3(1, 66, 0), diggable: true }
+  const bot = fakeWorld([lower, upper, barrel])
+  let digs = 0
+  const original = bot.dig
+  bot.dig = async block => { digs++; await original(block) }
+
+  const cleared = await clearAbove(bot, lower.position, { maxHeight: 3, logger: silentLogger })
+
+  assert.equal(cleared, 0, 'kontainer bukan penghalang yang boleh dihancurkan')
+  assert.equal(digs, 0)
+  assert.equal(bot.blockAt(upper.position).name, 'chest')
+  assert.equal(bot.blockAt(barrel.position).name, 'barrel')
+})
+
+test('clearAbove tidak menggali blok bernilai seperti crafting table atau bed', async () => {
+  const chest = { name: 'chest', position: new Vec3(1, 64, 0), diggable: true }
+  const table = { name: 'crafting_table', position: new Vec3(1, 65, 0), diggable: true }
+  const bot = fakeWorld([chest, table])
+  const cleared = await clearAbove(bot, chest.position, { maxHeight: 2, logger: silentLogger })
+  assert.equal(cleared, 0)
+  assert.equal(bot.blockAt(table.position).name, 'crafting_table')
+})

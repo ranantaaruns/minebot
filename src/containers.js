@@ -74,6 +74,27 @@ async function moveNear (bot, pos, distance = 2) {
   }
 }
 
+// Blok yang tidak boleh dihancurkan hanya karena menghalangi akses ke chest.
+// Menghancurkan chest lain menumpahkan isinya dan membuat owner kehilangan
+// barang, jadi penghalang semacam ini dilewati, bukan digali.
+const PROTECTED_CLEARING = new Set([
+  'crafting_table', 'furnace', 'blast_furnace', 'smoker', 'brewing_stand',
+  'enchanting_table', 'anvil', 'chipped_anvil', 'damaged_anvil',
+  'hopper', 'dispenser', 'dropper', 'lectern', 'jukebox', 'note_block',
+  'beacon', 'spawner', 'vault', 'trial_spawner', 'grindstone', 'stonecutter',
+  'smithing_table', 'cartography_table', 'fletching_table', 'loom'
+])
+
+function isProtectedFromClearing (block) {
+  const name = bareName(block?.name)
+  if (!name) return false
+  if (PROTECTED_CLEARING.has(name)) return true
+  if (isContainerBlock(block)) return true
+  if (name.endsWith('_shulker_box') || name.endsWith('_bed')) return true
+  if (name.endsWith('_sign') || name.endsWith('_hanging_sign')) return true
+  return false
+}
+
 async function clearAbove (bot, pos, options = {}) {
   const {
     maxHeight = 3,
@@ -90,6 +111,10 @@ async function clearAbove (bot, pos, options = {}) {
     if (!block || isAir(block)) break
     if (isLiquid(block)) {
       logger?.warn(`Penghalang container di ${target} adalah cairan`)
+      break
+    }
+    if (isProtectedFromClearing(block)) {
+      logger?.warn(`Tidak menghancurkan ${block.name} di atas container ${pos}; cari akses lain`)
       break
     }
     if (!block.diggable) {
@@ -153,5 +178,6 @@ module.exports = {
   findContainerPositions,
   moveNear,
   clearAbove,
+  isProtectedFromClearing,
   openContainerAt
 }

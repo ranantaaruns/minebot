@@ -16,6 +16,9 @@ const {
 } = require('../src/materials/tree')
 
 const silentLogger = { info () {}, debug () {}, warn () {}, error () {} }
+// Dunia mini di file ini hanya berisi log (tanpa tanah/daun), jadi filter
+// "pohon asli" dimatikan. Filter itu diuji terpisah di tree-natural.test.js.
+const FIXTURE_TREE = { naturalOnly: false }
 const LOG_ID = 7
 const MC = {
   blocksByName: { dark_oak_log: { id: LOG_ID } },
@@ -271,8 +274,8 @@ test('gatherLogs: dua bot berbagi klaim sehingga masing-masing menebang pohon se
   const botB = makeBot(world, new Vec3(14, 70, 2), 'bot2')
 
   const [resA, resB] = await Promise.all([
-    gatherLogs(botA, MC, null, 'dark_oak_log', 8, { logger: silentLogger, claims, ownerId: 'bot1' }),
-    gatherLogs(botB, MC, null, 'dark_oak_log', 8, { logger: silentLogger, claims, ownerId: 'bot2' })
+    gatherLogs(botA, MC, null, 'dark_oak_log', 8, { logger: silentLogger, claims, ownerId: 'bot1', tree: FIXTURE_TREE }),
+    gatherLogs(botB, MC, null, 'dark_oak_log', 8, { logger: silentLogger, claims, ownerId: 'bot2', tree: FIXTURE_TREE })
   ])
 
   assert.equal(resA.have, 8)

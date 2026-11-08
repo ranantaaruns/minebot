@@ -322,7 +322,7 @@ test('gatherLogs mengambil log dari tanah sehingga kuota terpenuhi', async () =>
 
   const result = await gatherLogs(bot, MC, null, 'dark_oak_log', 3, {
     logger: silentLogger,
-    tree: { minTreeSize: 1, scanRadius: 16, maxScanRadius: 16, waitMs: 10, replant: false },
+    tree: { minTreeSize: 1, scanRadius: 16, maxScanRadius: 16, waitMs: 10, replant: false, naturalOnly: false },
     claims: new TreeClaims()
   })
 
@@ -331,4 +331,28 @@ test('gatherLogs mengambil log dari tanah sehingga kuota terpenuhi', async () =>
   assert.equal(result.have, 3)
   assert.equal(result.drops, 3)
   assert.equal(Object.keys(bot.entities).length, 0, 'tidak ada log tertinggal di tanah')
+})
+
+test('gatherLogs hanya menebang pohon asli, bukan tiang rumah village', async () => {
+  const world = new Map()
+  // Pohon asli: tanah di bawah, daun di atas.
+  for (let y = 70; y <= 72; y++) world.set(key(new Vec3(0, y, 0)), logBlock(new Vec3(0, y, 0)))
+  world.set('0,69,0', soilBlock(new Vec3(0, 69, 0)))
+  world.set('0,73,0', leafBlock(new Vec3(0, 73, 0)))
+  // Tiang rumah: fondasi batu, papan di samping, tanpa daun.
+  for (let y = 70; y <= 72; y++) world.set(key(new Vec3(10, y, 0)), logBlock(new Vec3(10, y, 0)))
+  world.set('10,69,0', { name: 'cobblestone', type: 4, position: new Vec3(10, 69, 0), boundingBox: 'block' })
+  world.set('11,70,0', { name: 'oak_planks', type: 5, position: new Vec3(11, 70, 0), boundingBox: 'block' })
+
+  const bot = makeBot({ world, inventory: [] })
+  const result = await gatherLogs(bot, MC, null, 'dark_oak_log', 3, {
+    logger: silentLogger,
+    tree: { minTreeSize: 1, scanRadius: 24, maxScanRadius: 24, waitMs: 10, replant: false },
+    claims: new TreeClaims()
+  })
+
+  assert.equal(result.blocks, 3, 'hanya tiga log pohon yang ditebang')
+  for (let y = 70; y <= 72; y++) {
+    assert.equal(world.get(key(new Vec3(10, y, 0)))?.name, 'dark_oak_log', 'tiang rumah tidak disentuh')
+  }
 })
