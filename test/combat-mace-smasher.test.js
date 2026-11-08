@@ -36,7 +36,13 @@ function fakeBot ({ onGround = true } = {}) {
   bot.attacks = []
   bot.attack = e => bot.attacks.push(e)
   bot.activations = 0
-  bot.activateItem = () => { bot.activations++ }
+  // Wind charge sungguhan melontarkan bot: tirukan reaksi server itu supaya
+  // verifikasi liftoff tidak menunggu sampai timeout.
+  bot.activateItem = () => {
+    bot.activations++
+    bot.entity.onGround = false
+    bot.entity.velocity = new Vec3(0, 0.8, 0)
+  }
   bot.deactivateItem = () => {}
   bot.blockAt = () => ({ name: 'grass_block', position: new Vec3(0, 63, 0) })
   bot._client = { write () {} }
@@ -45,21 +51,25 @@ function fakeBot ({ onGround = true } = {}) {
 
 const target = () => ({ position: new Vec3(0, 64, 6), velocity: new Vec3(0, 0, 0), height: 1.8 })
 
-async function driveLaunch (bot, promise) {
-  for (let i = 0; i < 3; i++) {
+async function driveLaunch (bot, promise, ticks = 60) {
+  let done = false
+  promise.then(() => { done = true }, () => { done = true })
+  // Terus kirim tick selama urutan launch berjalan supaya jaring pengaman
+  // nextTick (timeout 1 detik) tidak perlu menembak.
+  for (let i = 0; i < ticks && !done; i++) {
     await new Promise(resolve => setTimeout(resolve, 5))
     bot.emit('physicsTick')
   }
   return promise
 }
 
-test('launch: hadap bawah dulu, lompat, pakai wind charge, pindah ke slot 0', async () => {
+test('launch: urutan hadap-bawah, lompat, tegaskan rotasi, lalu lempar', async () => {
   const bot = fakeBot()
   const order = []
   let stopped = 0
   bot.pathfinder = { stop: () => { stopped++ } }
   const originalLook = bot.look
-  bot.look = async (yaw, pitch) => { order.push('look'); await originalLook(yaw, pitch) }
+  bot.look = async (yaw, pitch, force) => { order.push('look'); await originalLook(yaw, pitch, force) }
   const originalControl = bot.setControlState
   bot.setControlState = (key, value) => {
     if (key === 'jump' && value) order.push('jump')
@@ -67,12 +77,13 @@ test('launch: hadap bawah dulu, lompat, pakai wind charge, pindah ke slot 0', as
   }
   bot.activateItem = () => { order.push('throw'); bot.activations++ }
   const loadout = new HotbarLoadout(bot, {})
-  const mace = new MaceSmasher(bot, loadout, silent, {})
+  const mace = new MaceSmasher(bot, loadout, silent, { rotationTicks: 1 })
 
-  await driveLaunch(bot, mace.launch(target()))
+  await driveLaunch(bot, mace.launch(target()), 8)
 
   assert.equal(stopped, 1, 'pathfinder tidak boleh melawan arah pandang combo')
-  assert.deepEqual(order, ['look', 'jump', 'throw'])
+  // Rotasi ditegaskan dua kali: sebelum lompat dan tepat sebelum melempar.
+  assert.deepEqual(order.slice(0, 4), ['look', 'jump', 'look', 'throw'])
   assert.equal(bot.controls.jump, false, 'jump dilepas setelah 1 tick')
   assert.ok(bot.lookCalls.length >= 1)
   assert.ok(Math.abs(bot.lookCalls[0][1] - (-Math.PI / 2)) < 1e-6, 'pitch menghadap ke bawah')

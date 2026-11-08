@@ -31,7 +31,12 @@ function fakeBot ({ onGround = true, position = new Vec3(0, 64, 0) } = {}) {
   bot.attacks = []
   bot.attack = e => bot.attacks.push(e)
   bot.activations = 0
-  bot.activateItem = () => { bot.activations++ }
+  // Tirukan reaksi wind charge: bot terlempar ke atas sehingga verifikasi liftoff lolos.
+  bot.activateItem = () => {
+    bot.activations++
+    bot.entity.onGround = false
+    bot.entity.velocity = new Vec3(0, 0.8, 0)
+  }
   bot.deactivateItem = () => {}
   bot._client = { write () {} }
   bot.registry = require('minecraft-data')('1.21.4')
@@ -89,7 +94,7 @@ test('target dalam jendela luncur memicu wind charge pada mode mace', async () =
   engine.setWeaponMode('mace')
   engine.setTarget(enemy(0, 64, 6))
   const p = engine.tick()
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 12; i++) {
     await new Promise(r => setTimeout(r, 5))
     bot.emit('physicsTick')
   }
@@ -254,7 +259,7 @@ test('Wind Burst: setelah smash bot menunggu jatuh lagi, bukan spam attack saat 
   bot.entity.velocity = new Vec3(0, 0, 0)
   engine.mace.nextLaunchAt = 0
   const relaunch = engine.tick()
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 12; i++) {
     await new Promise(r => setTimeout(r, 5))
     bot.emit('physicsTick')
   }

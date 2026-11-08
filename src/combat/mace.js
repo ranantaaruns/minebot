@@ -102,20 +102,25 @@ class MaceSmasher {
   async lookStraightDown () {
     const bot = this.bot
     const yaw = bot.entity?.yaw ?? 0
-    // look() pitch: -π/2 = straight down, +π/2 = straight up.
-    // lookAt() menghitung pitch = atan2(delta.y, groundDistance) -> -π/2 untuk bawah.
+    // Konvensi pitch mineflayer: -π/2 = lurus ke bawah, +π/2 = lurus ke atas.
+    // toNotchianPitch(-π/2) = +90°, yang di protokol memang "down".
     if (typeof bot.look === 'function') {
       await bot.look(yaw, -Math.PI / 2, true)
       return
     }
-    // Fallback: titik 100 blok di bawah kaki -> pitch -π/2.
+    // Fallback: titik 100 blok di bawah mata -> pitch -π/2.
     await bot.lookAt(bot.entity.position.offset(0, -100, 0), true)
   }
 
-  // Urutan: hentikan pathfinder -> pilih wind charge -> hadap tepat ke bawah
-  // -> tunggu 1 tick agar rotasi terkirim -> lompat 1 tick -> lempar -> mace.
-  // Rotasi dikirim juga oleh paket use_item pada 1.21.11. Jangan kirim
-  // deactivateItem: itu release_use_item untuk bow, bukan throw.
+  // Urutan: stop pathfinder -> pilih wind charge -> hadap tepat ke bawah ->
+  // BIARKAN paket rotasi sampai ke server (rotationTicks) -> lompat ->
+  // tegaskan lagi pitch ke bawah -> lempar -> kembali ke mace dan bidik target.
+  //
+  // Kenapa rotasi ditegaskan dua kali: mineflayer mengirim rotasi di
+  // updatePosition() pada physicsTick, bukan saat bot.look() dipanggil. Kalau
+  // use_item dikirim pada tick yang sama dengan lompatan, paketnya masih
+  // membawa pitch lama (mendatar) sehingga wind charge melayang horizontal,
+  // bukan meledak di bawah kaki. Itu penyebab bot tidak terlempar ke atas.
   async launch (target) {
     const bot = this.bot
     if (bot.entity?.onGround !== true) return false
@@ -126,18 +131,56 @@ class MaceSmasher {
       return false
     }
     this.nextLaunchAt = Date.now() + this.settings.launchCooldownMs
+
+    const rotationTicks = Math.max(1, Number(this.settings.rotationTicks) || 2)
     await this.lookStraightDown()
-    await nextTick(bot, 1)
+    await nextTick(bot, rotationTicks)
+
+    // Lompat dulu supaya bot tidak menempel di lantai saat charge meledak.
     bot.setControlState('jump', true)
     await nextTick(bot, 1)
     bot.setControlState('jump', false)
+    await nextTick(bot, 1)
+
+    // Pastikan rotasi terakhir yang terkirim benar-benar ke bawah.
+    await this.lookStraightDown()
+    await nextTick(bot, 1)
+
     bot.activateItem()
     await nextTick(bot, 1)
+
     await this.loadout.select(TAGS.MACE)
+    if (target?.position) {
+      await bot.lookAt(headPoint(target, this.settings.leadTicks), true).catch(() => {})
+    }
+
+    // Verifikasi bot benar-benar terlempar. Kalau server menolak (anti-cheat,
+    // charge hilang, atau paket rotasi terlambat) bot tidak boleh terus
+    // membakar wind charge sambil berdiri di tanah.
+    const lifted = await this.waitForLiftoff()
     this.stats.launches++
     this.chainCount = 0
     this.burstActive = false
-    return true
+    this.lastHitUsedBurst = false
+    if (!lifted) {
+      this.stats.failedLaunches = (this.stats.failedLaunches || 0) + 1
+      this.logger?.warn?.('Mace: wind charge terlempar tapi bot tidak terangkat ke atas')
+    }
+    return lifted
+  }
+
+  // Tunggu sampai bot meninggalkan tanah / punya kecepatan naik.
+  async waitForLiftoff (ticks = null) {
+    const bot = this.bot
+    const limit = Math.max(1, Number(ticks ?? this.settings.liftoffTicks) || 6)
+    for (let i = 0; i < limit; i++) {
+      await nextTick(bot, 1)
+      const entity = bot.entity
+      if (!entity) break
+      if (entity.onGround === false) return true
+      if ((entity.velocity?.y ?? 0) > 0.1) return true
+    }
+    return false
   }
 
   async smash (target) {
