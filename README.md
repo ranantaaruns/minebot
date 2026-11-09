@@ -1,739 +1,294 @@
-# mcbot
+# Minebot
 
-Bot Minecraft untuk login otomatis, mengikuti owner, mengumpulkan material, dan membangun struktur dari file `.litematic` / `.schem` / `.nbt`.
+Bot Minecraft Java berbasis [Mineflayer](https://github.com/PrismarineJS/mineflayer) untuk membantu membangun struktur, mengumpulkan material, mengikuti owner, dan menjalankan PvP. Bot dikendalikan melalui terminal, dapat berjalan sendiri atau sebagai **swarm hingga 50 bot** dalam satu server.
 
-Dibuat untuk server Java offline-mode (AuthMe dan sejenisnya). Bot berjalan di terminal dan dikendalikan lewat perintah teks.
+Proyek ini terutama ditujukan untuk server Java **offline-mode** yang memakai plugin login seperti AuthMe. Target pengembangan saat ini adalah **Minecraft 1.21.11**; sebagian fitur, khususnya spear dan Wind Burst, bergantung pada versi server.
+
+## Fitur utama
+
+- **Login otomatis** — register/login AuthMe, reconnect, anti-AFK, dan deteksi status spawn.
+- **Mengikuti owner** — auto-follow, menerima koordinat dari chat/whisper, berenang, memanjat tangga, dan membuat tower sederhana saat diperlukan.
+- **Membangun blueprint** — mendukung `.litematic`, `.schem`, `.schematic`, dan `.nbt`, termasuk rotasi, mirror, survival, dan creative.
+- **Gather material** — mengambil dari inventory/chest, crafting, smelting, mining, menyimpan kelebihan item, dan membagi pekerjaan antar-bot.
+- **Menebang pohon dengan aman** — satu bot satu pohon, menebang dari atas ke bawah, mengambil drop, menanam ulang sapling, serta melewati tiang kayu yang tampak seperti bagian bangunan.
+- **PvP normal** — sword/axe/shield, critical hit, orbit mengelilingi lawan, bow dengan prediksi balistik, dodge panah, dan retreat sambil makan.
+- **Combo mace** — wind charge dilempar ke bawah untuk meluncur, smash saat jatuh, dukungan rantai Wind Burst, dan water-bucket clutch.
+- **Charge spear** — memakai elytra dan firework, menjauh untuk run-up, menyerang dengan kecepatan relatif tinggi, serta menghindari halangan di jalur terbang.
+- **Lava bucket opsional** — menaruh lava untuk membakar lawan lalu mengambil sumbernya kembali.
+- **Sinkronisasi spawn kasur** — saat owner tidur, bot ikut tidur agar memperoleh spawn di area kasur owner.
+- **Pelacakan player** — mencatat koordinat entity yang memang dikirim server, lengkap dengan penanda saat posisi hanya berupa prediksi.
+
+Dokumentasi opsi dan perilaku teknis yang lebih lengkap tersedia di [Panduan Lengkap](docs/PANDUAN-LENGKAP.md).
 
 ## Kebutuhan
 
-- Node.js 22 atau lebih baru
-- Akun Minecraft yang boleh dipakai di server tujuan
-- Server Java (tidak perlu dijalankan di komputer ini)
+- [Node.js 22 atau lebih baru](https://nodejs.org/).
+- Server Minecraft Java yang mengizinkan bot masuk.
+- Akun/username khusus bot; untuk AuthMe, siapkan password bot.
+- Izin build, mining, PvP, atau gamemode yang sesuai di server.
 
 ## Instalasi
 
 ```bash
-cd mcbot
+git clone https://github.com/ranantaaruns/minebot.git
+cd minebot
 npm install
 cp config.example.json config.json
 ```
+
+Di Windows Command Prompt, gunakan `copy config.example.json config.json` jika `cp` tidak tersedia.
 
 Edit `config.json`:
 
 ```json
 {
-  "server": { "host": "play.contoh.com", "port": 25565, "version": "1.21.11" },
-  "bot": { "username": "BuilderBot", "auth": "offline" },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 25565,
+    "version": "1.21.11"
+  },
+  "bot": {
+    "username": "BuilderBot",
+    "auth": "offline",
+    "count": 1
+  },
+  "owner": {
+    "username": "NamaKamu",
+    "autoFollow": true,
+    "syncBedSpawn": true
+  },
   "auth": {
     "enabled": true,
-    "password": "password-akun-bot",
+    "password": "GANTI_DENGAN_PASSWORD_BOT",
     "registerCommand": "/register {password} {password}",
     "loginCommand": "/login {password}"
-  },
-  "physics": { "paperCollisionFix": true },
-  "owner": { "username": "NamaKamu", "autoFollow": true }
+  }
 }
 ```
 
-- `server.version`: isi `"1.21.11"` untuk Paper 1.21.11. Bisa juga `null` agar dideteksi otomatis.
-- `physics.paperCollisionFix` memperbaiki bug collision Paper 1.21.11 yang membuat bot menempel di pinggir block. Biarkan `true` untuk server tersebut.
-- `owner.stuckTimeoutMs`, `owner.maxStuckRetries`, dan `owner.unstickJump` mengatur pemulihan otomatis saat follow macet.
-- `auth.password` hanya disimpan di `config.json` yang sudah masuk `.gitignore`. Jangan commit file itu.
-- `owner.username` adalah username Anda, bukan username bot.
-- Kalau server memakai format register/login lain, ubah `registerCommand` / `loginCommand`. Placeholder `{password}` akan diganti otomatis.
-- `owner.autoFollow: true` membuat bot mendekat saat owner terlihat, atau saat owner mengirim koordinat di chat/whisper.
-- `owner.syncBedSpawn: true` (default) membuat bot **ikut set spawn saat owner tidur di kasur**. Bot mendeteksi event tidur owner, berjalan ke kasurnya, lalu tidur di sana. Vanilla hanya mengizinkan satu pemain per kasur, jadi kalau kasur owner sedang dipakai, bot otomatis memakai kasur kosong terdekat (`owner.bedSearchRadius`, default 6 blok) supaya titik spawn-nya tetap di tempat yang sama; kalau tidak ada kasur kosong, bot hanya memperingatkan dan tidak memindahkan spawn-nya. Fitur ini juga aktif di setiap bot swarm.
+Penjelasan singkat:
 
-## Menjalankan
+| Opsi | Fungsi |
+| --- | --- |
+| `server.host` / `server.port` | Alamat server tujuan |
+| `server.version` | Versi Minecraft; gunakan `null` untuk deteksi otomatis |
+| `bot.username` | Username bot pertama |
+| `bot.count` | Jumlah bot saat launcher non-interaktif |
+| `owner.username` | Username akun kamu, **bukan** username bot |
+| `auth.enabled` | Mengaktifkan register/login otomatis |
+| `auth.password` | Password AuthMe bot |
+| `owner.autoFollow` | Bot mengikuti owner secara otomatis |
+| `owner.syncBedSpawn` | Bot ikut set spawn saat owner tidur di kasur |
+
+`config.json` sudah tercantum di `.gitignore`. **Jangan pernah commit password atau config lokal kamu.** File `config.example.json` hanya berisi contoh.
+
+## Menjalankan bot
 
 ```bash
 npm start
 ```
 
-Saat pertama kali dijalankan tanpa `config.json`, bot membuat salinannya dari contoh lalu berhenti agar Anda bisa mengeditnya.
+Launcher akan menanyakan jumlah bot dan nickname-nya. Setelah bot terhubung, gunakan prompt berikut:
 
-Setelah tersambung dan login, akan muncul prompt:
-
-```
+```text
 mcbot>
 ```
 
-## Perintah
+Ketik `help` untuk melihat daftar perintah langsung dari program.
+
+## Cara menggunakan
+
+### Perintah dasar
 
 | Perintah | Fungsi |
 | --- | --- |
-| `help` | Daftar perintah |
-| `status` | Status koneksi, auth, job, posisi |
-| `pos` | Koordinat bot |
-| `inv [filter]` | Isi inventory |
-| `materials <file> [opsi]` | Hitung kebutuhan material |
-| `build <file> [opsi]` | Bangun struktur |
-| `gamemode [mode]` | Lihat atau ubah gamemode bot (survival/creative/dll) |
-| `gather <item> <count>` | Kumpulkan material |
-| `attack <nama player> [--bot <id\|nama>]` | Cari dan bunuh player |
-| `combat [on\|off]` | Lihat / nyalakan mesin PvP udara (mace + elytra charge) |
-| `track [on\|off]` | Lihat/matikan pelacak koordinat player |
-| `track where <player>` | Koordinat terakhir + prediksi arah player |
-| `track export [file]` | Ekspor seluruh riwayat pelacakan ke JSON |
-| `come [x y z]` | Datang ke owner / koordinat |
-| `follow` | Aktifkan auto-follow |
-| `say <teks>` | Kirim chat |
-| `register` | Kirim ulang command `/register` ke server |
-| `auth` | Coba login ulang |
-| `pause` / `resume` | Jeda / lanjut build |
-| `stop` | Hentikan job |
-| `quit` | Keluar |
+| `status` | Melihat koneksi, auth, job, dan posisi |
+| `pos` | Menampilkan koordinat bot |
+| `inv [filter]` | Melihat inventory |
+| `come` | Memanggil bot ke owner |
+| `come <x> <y> <z>` | Mengirim bot ke koordinat |
+| `follow` | Mengaktifkan auto-follow owner |
+| `say <teks>` | Mengirim pesan ke chat server |
+| `register` | Mengirim ulang perintah register |
+| `auth` | Mencoba login ulang |
+| `pause` / `resume` | Menjeda/melanjutkan build |
+| `stop` | Menghentikan job aktif |
+| `quit` | Keluar dan memutuskan bot |
 
-Opsi `build`:
+### Gather material
 
-- `--at x y z` — titik awal build (default: posisi bot)
-- `--creative` — gunakan mode creative (bypass pencarian/mining material)
-- `--survival` — paksa mode survival
-- `--dry-run` — hanya tampilkan rencana material
-- `--no-gather` — jangan menambang/crafting, pakai inventory dan chest saja
-- `--force` — tetap build walau material kurang
-- `--rotate <90|180|270>` — putar blueprint searah jarum jam (north → east)
-- `--mirror <x|z>` — cerminkan blueprint pada sumbu x atau z
-- `--bot <id|nama>` — pilih bot tertentu saat menjalankan lebih dari satu bot
-
-Opsi `--rotate`, `--mirror`, dan `--bot` juga berlaku untuk `materials`.
-
-Kalau server di-reset total dan akun bot belum terdaftar lagi, jalankan:
-
-```
-mcbot> register
+```text
+mcbot> gather oak_log 64
+mcbot> gather ancient_debris 4
+mcbot> gather stone 128
 ```
 
-Bot akan mengirim ulang command yang ada di `auth.registerCommand`.
+Bot akan memeriksa inventory dan chest terdekat, lalu crafting/smelting/mining sesuai kebutuhan. Untuk kayu, bot memprioritaskan pohon di sekitarnya dan mengambil drop setelah menebang.
 
-Contoh:
+Filter pohon asli dapat dimatikan melalui `gather.tree.naturalOnly: false`, tetapi gunakan dengan hati-hati karena bot bisa menganggap log pada bangunan sebagai pohon.
 
-```
+### Membangun blueprint
+
+Letakkan file di folder `blueprints/`, lalu jalankan:
+
+```text
 mcbot> materials rumah.litematic
 mcbot> build rumah.litematic --at 100 64 -20
-mcbot> build rumah.litematic --no-gather
 mcbot> build menara.schem --dry-run
 mcbot> build rumah.litematic --rotate 90 --mirror z
+mcbot> build rumah.litematic --no-gather
 mcbot> build rumah.litematic --bot 2
 ```
 
-## Rencana material tanpa menjalankan bot
+Opsi penting:
+
+| Opsi | Fungsi |
+| --- | --- |
+| `--at <x> <y> <z>` | Menentukan titik awal build |
+| `--creative` | Memakai creative dan melewati pencarian material |
+| `--survival` | Memaksa survival |
+| `--dry-run` | Hanya menghitung rencana/material |
+| `--no-gather` | Tidak mining/crafting; hanya inventory dan chest |
+| `--force` | Tetap membangun walaupun material kurang |
+| `--rotate <90\|180\|270>` | Memutar blueprint searah jarum jam |
+| `--mirror <x\|z>` | Mencerminkan blueprint |
+| `--bot <id\|nama>` | Memilih bot tertentu dalam swarm |
+
+Menghitung material tanpa masuk server:
 
 ```bash
-npm run plan -- rumah.litematic
-npm run plan -- rumah.schem --json
+npm run plan -- blueprints/rumah.litematic
+npm run plan -- blueprints/rumah.schem --json
 ```
 
-Berguna untuk mengecek jumlah blok, material, dan blok yang tidak didukung sebelum masuk server.
+### PvP dan pemilihan senjata
 
-## Cara kerja material
-
-1. Cek inventory bot.
-2. Ambil dari chest/barrel di sekitar area build (`gather.chestRadius`). Kalau ada blok di atas chest, bot menggali penghalang yang bisa digali lebih dulu.
-3. Kalau inventory hampir penuh, bot menyimpan resource ke storage terdekat. Gear, armor, makanan, bahan bakar, dan material job tidak disimpan.
-4. Kalau material tidak cocok dengan biome, bot menanyakan pilihan ke owner sebelum menambang.
-5. Craft item turunan (plank, stick, stairs, slab, door, dsb.), termasuk fallback resep langsung saat planner utama gagal.
-6. Smelt item seperti stone, smooth stone, glass, brick, dan stone bricks. Bahan bakar yang sudah ada di furnace dipakai lebih dulu.
-7. Menambang blok sumber di sekitar bot (`gather.mineRadius`) untuk material umum.
-8. Kalau masih kurang, build berhenti kecuali `--force`.
-
-Yang tidak otomatis ditambang: material langka/berbahaya seperti diamond, netherite, obsidian, sponge, dan blok yang butuh enchant/silk touch. Siapkan lewat chest atau inventory.
-
-## File blueprint
-
-Lihat [blueprints/README.md](blueprints/README.md). Letakkan file di folder `blueprints/`, lalu panggil namanya saja.
-
-Format yang didukung:
-
-| Ekstensi | Sumber | Catatan |
-| --- | --- | --- |
-| `.litematic` | Litematica | Beberapa region digabung otomatis |
-| `.schem` / `.schematic` | WorldEdit / Sponge / MCEdit | |
-| `.nbt` | Structure block Minecraft (“Save Structure”) | |
-
-Semua format menerima `--rotate` dan `--mirror`, jadi satu file bisa dipakai untuk beberapa arah tanpa duplikat.
-
-## Bot macet di pinggir block (Paper 1.21.11)
-
-Paper 1.21.11 memakai hitbox server yang sedikit lebih lebar daripada hitbox client Mineflayer. Saat bot menempel tepat di pinggir block, lompatan bisa ditolak server dan bot terlihat “glued” ke block.
-
-Bot sudah menerapkan kompensasi ukuran hitbox secara otomatis bila `physics.paperCollisionFix` bernilai `true`. Nilai default:
-
-```json
-"physics": {
-  "paperCollisionFix": true,
-  "playerHalfWidth": 0.30001,
-  "playerHeight": 1.80001
-}
-```
-
-Jika Paper memperbaiki bug collision-nya dan bot justru sulit melewati celah sempit, matikan dengan `"paperCollisionFix": false`.
-
-Saat follow macet, bot akan berhenti sebentar, memberi dorongan lompat/mundur, lalu menghitung ulang rute. Atur lewat:
-
-```json
-"owner": {
-  "stuckTimeoutMs": 4000,
-  "maxStuckRetries": 2,
-  "stuckCooldownMs": 10000,
-  "unstickJump": true
-}
-```
-
-Aktifkan `"logging": { "debug": true }` untuk melihat log `path_reset`, alasan gagal, dan posisi saat pemulihan.
-
-## Tower otomatis saat follow
-
-Saat owner berada di tebing atau tempat yang lebih tinggi, bot bisa memasang tower untuk mengejar. Kalau block tower tidak cukup, bot berhenti sementara, mencari `grass_block` atau `dirt` terdekat, menambangnya, lalu menghitung ulang rute dan melanjutkan tower.
-
-```json
-"owner": {
-  "allowTower": true,
-  "towerBlocks": ["dirt", "grass_block", "cobblestone", "oak_planks", "scaffolding"],
-  "towerPlaceCost": 40,
-  "towerGather": {
-    "enabled": true,
-    "item": "dirt",
-    "preferredBlocks": ["grass_block", "dirt"],
-    "radius": 32,
-    "protectRadius": 6,
-    "reserve": 8,
-    "minGap": 2,
-    "maxPerAttempt": 32,
-    "maxAttempts": 3,
-    "cooldownMs": 30000,
-    "timeoutMs": 120000,
-    "allowHandMining": true
-  }
-}
-```
-
-- Urutan `towerBlocks` menentukan prioritas block yang dipakai untuk tower.
-- `grass_block` dan `dirt` adalah sumber utama. Tanpa enchant silk touch, `grass_block` akan menjadi `dirt` saat ditambang.
-- Bot memakai `dirt` dari inventory, chest, atau hasil tambang. Kalau shovel tidak tersedia, bot tetap menggali dengan tangan.
-- `protectRadius` mencegah bot menambang block di sekitar posisi owner.
-- Bot tidak menambang block tepat di bawah kakinya supaya tidak jatuh.
-- Kalau block tetap tidak ditemukan setelah `maxAttempts`, bot berhenti sementara selama `cooldownMs` lalu mencoba lagi.
-- Kalau pencarian block tower gagal total, bot tidak diam: ia melepas rute lama dan tetap mengikuti owner sebisanya (rute biasa). Pencarian block tower berikutnya ditunda `retryCooldownMs` (default `180000` = 3 menit) supaya bot tidak berulang kali berhenti menambang.
-- Config lama tetap kompatibel. Kalau bagian `owner.allowTower` atau `owner.towerGather` belum ada, bot memakai nilai default di atas.
-
-## Menambang dan towering
-
-Saat job `gather`/`mine`, bot memakai movements khusus tambang sehingga ia boleh menumpuk 1×1 memakai block hasil tambang sendiri (`cobblestone`, `cobbled_deepslate`, `stone`, `deepslate`, `tuff`, `dirt`, dan sejenisnya) untuk menjangkau block yang lebih tinggi. Ini mencegah bot diam dengan alasan tidak ada block untuk tower saat menambang.
-
-- `owner.allowTower: false` tetap mematikan towering, termasuk saat menambang.
-- Kalau block benar-benar tidak terjangkau (pathfinder `NoPath` dua kali), bot menghentikan pencarian block lain untuk job itu, membersihkan goal lama, dan lanjut ke tugas berikutnya dengan warning `Blok tambang tidak terjangkau (perlu menumpuk/naik)`.
-
-## Berenang saat follow
-
-Bot tidak bergantung pada pathfinder untuk menyeberangi air. Saat masuk air, bot mengambil alih kontrol, terus menahan `jump` agar tidak tenggelam, lalu berenang ke arah owner. Kalau menabrak tepian, bot mencoba strafe kiri/kanan sambil tetap melompat.
-
-```json
-"owner": {
-  "swim": {
-    "enabled": true,
-    "liquidCost": 12,
-    "updateMs": 250,
-    "timeoutMs": 120000,
-    "shoreStrafeAfterMs": 2000,
-    "strafeMs": 800,
-    "approachFromShore": true,
-    "approachScanDistance": 16,
-    "approachTimeoutMs": 4000
-  }
-},
-"safety": {
-  "preventDrowning": true
-}
-```
-
-- `liquidCost` membuat pathfinder lebih memilih jalur air daripada memutar jauh.
-- `approachFromShore` membuat bot mencoba berjalan masuk air saat pathfinder melaporkan `noPath`.
-- `timeoutMs` hanya menghentikan steering. Anti-tenggelam tetap aktif sampai bot keluar air.
-- `preventDrowning` harus tetap `true` agar bot mengapung walaupun `swim.enabled` dimatikan.
-- Saat job build/gather berjalan, pathfinder job tetap mengemudi; navigator hanya menjaga bot tetap mengapung.
-
-## Navigasi permukaan
-
-Saat target follow berada di permukaan, bot memberi biaya besar pada langkah yang masuk ke gua/area beratap dan pada turun yang terlalu dalam. Target yang berada di dalam gua tetap memakai navigasi normal.
-
-```json
-"owner": {
-  "navigation": {
-    "surfaceBias": true,
-    "verticalThreshold": 4,
-    "maxDescent": 2,
-    "coverScanHeight": 4
-  }
-}
-```
-
-- `surfaceBias` menyalakan/mematikan bias permukaan.
-- `verticalThreshold` menentukan selisih tinggi target agar dianggap target di atas.
-- `maxDescent` mencegah bot turun terlalu jauh saat mengejar target permukaan.
-- `coverScanHeight` adalah jumlah blok ke atas yang dicek untuk mendeteksi atap.
-
-## Keamanan lava
-
-Bot memantau lava/fire setiap `safety.lava.checkIntervalMs` (default 250 ms). Begitu bot masuk lava, pathfinder dihentikan dan bot dipindahkan ke blok aman terdekat — bukan hanya memberi warning di console.
-
-```json
-"safety": {
-  "lava": {
-    "enabled": true,
-    "checkIntervalMs": 250,
-    "dangerRadius": 8,
-    "escapeTimeoutMs": 2500,
-    "cooldownMs": 1500
-  }
-}
-```
-
-Selain penjagaan aktif itu, pathfinder juga diberi aturan tambahan:
-
-- Blok yang berbatasan lava (termasuk diagonal) diberi penalti besar untuk dipijak, baik di Nether maupun di overworld.
-- `movements.exclusionAreasBreak` menolak menggali blok yang menempel lava, karena lava bisa langsung mengalir ke lorong. Ini yang membuat bot tidak lagi mati saat menggali `ancient_debris`.
-- Saat menambang ancient debris, bot memeriksa kotak 2 blok di sekitar debris dan di depan lorong tambang. Kalau lava terdeteksi, arah lorong diputar 90 derajat; setelah 4 kali putaran (`maxLavaTurns`) bot berhenti dengan alasan `lava-blocked`.
-
-## Makan saat perjalanan
-
-Bot makan otomatis saat food turun. Sebelum makan, bot menghentikan pathfinder sebentar, menunggu proses menggali atau memasang block selesai, lalu melanjutkan perjalanan. Saat berada di air, bot tetap menahan `jump` selama makan.
-
-```json
-"safety": {
-  "autoEat": true,
-  "eatThreshold": 16,
-  "criticalFood": 6,
-  "eatCheckIntervalMs": 2000,
-  "eatRetryMs": 4000,
-  "noFoodAction": "stop",
-  "pauseMovementWhileEating": true
-}
-```
-
-- Bot hanya memakai makanan dari inventory.
-- Kalau food rendah tetapi tidak ada makanan, bot memberi warning dan tetap berjalan selama food masih di atas `criticalFood`.
-- Kalau food mencapai `criticalFood` dan masih tidak ada makanan, bot berhenti, whisper owner, dan menunggu. Job build/gather yang sedang berjalan dihentikan pada batas aman.
-- Setelah owner memberi makanan, bot makan lalu melanjutkan perjalanan.
-- `follow` dan `resume` mencoba melepas status menunggu makanan bila food sudah aman atau ada makanan di inventory.
-
-## Material lintas biome
-
-Sebelum menambang, bot mendeteksi biome di titik build. Kalau blueprint memakai kayu atau blok khas biome lain dan stok inventory/chest tidak cukup, bot bertanya ke owner. Pertanyaan dikelompokkan per family, misalnya semua varian cherry ditanyakan sekaligus.
-
-```json
-"build": {
-  "biomeMaterials": {
-    "enabled": true,
-    "askOwner": true,
-    "allowCustomAlternative": true,
-    "reminderMs": 30000,
-    "pickupRadius": 8,
-    "ownerSupplyTimeoutMs": 0
-  }
-}
-```
-
-Pilihan jawaban:
-
-- `1` / `ganti`: ganti seluruh family dengan alternatif yang cocok untuk biome. Contoh: cherry di savanna menjadi acacia.
-- `2` / `tetap`: bot tidak menambang/craft material itu. Owner harus drop di dekat bot atau menaruhnya di chest. Bot mengambil drop/chest dan mengingatkan berkala.
-- `3` / `stop`: batalkan job build.
-- Nama item lain: dipakai sebagai alternatif custom setelah divalidasi.
-
-`ownerSupplyTimeoutMs: 0` berarti bot menunggu tanpa batas sampai item tersedia atau job dihentikan. `gather <item>` dan `--dry-run` tidak memakai dialog ini.
-
-## Combat hostile dan armor otomatis
-
-Bot hanya menyerang mob hostile yang masuk jangkauan. Bot tidak mengejar jauh dan tidak pernah menyerang player sendiri — player hanya diserang lewat perintah manual `attack <nama player>` (lihat bagian berikutnya). Saat ada armor yang lebih baik di inventory, bot memakainya otomatis.
-
-```json
-"combat": {
-  "enabled": true,
-  "autoArmor": true,
-  "attackRange": 3.5,
-  "detectRadius": 8,
-  "maxPursueDistance": 6,
-  "attackCooldownMs": 650,
-  "defendTimeoutMs": 12000,
-  "hunt": {
-    "meleeRange": 3.2,
-    "bowRange": 24,
-    "drawMs": 1000,
-    "tickMs": 250,
-    "timeoutMs": 180000
-  }
-}
-```
-
-## Menyerang player (`attack`)
-
-`attack <nama player>` adalah perintah manual: bot berhenti dari pekerjaan lain (auto-follow dijeda), mencari player tersebut, lalu membunuhnya.
-
-1. Bot memakai armor terbaik di inventory, lalu senjata dengan damage terbesar (netherite sword > mace > diamond sword > trident > axe, dst).
-2. Jarak dekat (≤ `meleeRange`): bot mendekat dengan pathfinder lalu memukul mengikuti cooldown `attackCooldownMs`.
-3. Jarak jauh (≤ `bowRange`): bot berhenti, memakai bow, membidik dengan kompensasi jatuhnya panah dan gerakan target, menarik panah selama `drawMs`, lalu melepas. Bot hanya memanah kalau punya panah; kalau panah habis bot mengejar untuk serang jarak dekat.
-
-#### Prediksi arah jatuh panah
-
-Bidikan lama memakai rumus `jatuh = ½ · g · t²` dengan `t = jarak / 3`, lalu membidik titik di atas lawan. Rumus itu **mengabaikan drag** panah, memakai jarak 3D padahal yang menentukan waktu tempuh hanya jarak mendatar, dan membidik `0.8 × tinggi badan` di atas kaki. Hasilnya bidikan meleset **ke atas** saat lawan lebih tinggi / jarak menengah, dan meleset **ke bawah** saat jarak jauh — persis keluhan "kadang terlalu ke atas, kadang terlalu ke bawah".
-
-`src/safety/ballistics.js` sekarang meniru fisika panah server per tick:
-
-```
-pos  += velocity
-velocity *= 0.99        // drag udara
-velocity.y -= 0.05      // gravitasi
-```
-
-Dengan kecepatan awal 3 blok/tick (tarikan penuh), modul ini:
-
-1. **Mencari sudut tembak** dengan simulasi + pencarian biner, bukan rumus perkiraan. Sudut dicari dari yang paling datar, jadi bot memilih lintasan rendah yang cepat sampai, bukan melengkung tinggi.
-2. **Meluncurkan dari mata bot** (`position.y + 0.9 × tinggi`), sama dengan titik acuan `bot.lookAt` di mineflayer. Dulu dipakai posisi kaki sebagai acuan jarak sehingga sudutnya ikut salah.
-3. **Membidik tengah badan lawan** (`aimHeightRatio 0.5`), bukan 0.8 tinggi badan yang mendekati ubun-ubun.
-4. **Memimpin target bergerak**: waktu tempuh dari simulasi dipakai untuk memperkirakan posisi lawan saat panah tiba, diulang `aimLeadTicks` kali karena jarak yang berubah juga mengubah waktu tempuh.
-5. **Menghitung ulang tepat sebelum melepas**, setelah `drawMs + drawMarginMs`, karena lawan sudah bergerak selama busur ditarik.
-
-Akurasi hasilnya diuji numerik: pada jarak 3–40 blok dan beda tinggi −6 sampai +8 blok, panah mendarat dalam **0.02 blok** dari tengah badan lawan, sedangkan heuristik lama meleset 0.3–0.7 blok.
-4. Lebih jauh dari `bowRange`: bot mengejar target (GoalFollow). Kalau pathfinder gagal 3× (`noPath`), job berhenti dengan alasan `unreachable`.
-5. Job berhenti sendiri saat target mati, target hilang dari pandangan, `timeoutMs` habis, atau `stop` diketik.
-
-Nilai `combat.hunt` yang bisa diubah:
-
-| Opsi | Default | Fungsi |
-| --- | --- | --- |
-| `meleeRange` | `3.2` | Jarak (blok) untuk mulai memukul |
-| `bowRange` | `24` | Jarak maksimum memakai bow |
-| `drawMs` | `1000` | Lama menarik panah sebelum dilepas |
-| `drawMarginMs` | `80` | Tambahan waktu tarik agar tarikan benar-benar penuh (panah pelan = jatuh pendek) |
-| `aimHeightRatio` | `0.5` | Titik bidik pada badan lawan (0.5 = tengah badan) |
-| `aimLeadTicks` | `2` | Berapa kali posisi lawan diperkirakan ulang saat memanah target bergerak |
-| `tickMs` | `250` | Jeda antar keputusan menyerang |
-| `timeoutMs` | `180000` | Batas waktu satu job attack |
-| `retreatEnabled` | `true` | Lari + makan saat darah rendah saat PvP |
-| `retreatHealth` | `10` | Darah (dari 20) yang memicu lari |
-| `retreatResumeHealth` | `16` | Darah yang harus tercapai sebelum menyerang lagi |
-| `retreatDistance` | `12` | Jarak yang dianggap cukup jauh dari target |
-| `retreatTickMs` | `200` | Interval pembaruan arah lari |
-| `retreatFleeTimeoutMs` | `15000` | Batas waktu lari sebelum kembali menyerang |
-| `retreatZigzagDeg` | `35` | Besar belokan kiri/kanan saat lari |
-| `retreatZigzagMs` | `400` | Interval ganti arah belokan |
-
-Nilai `combat.shield` untuk memakai shield saat PvP:
-
-| Opsi | Default | Fungsi |
-| --- | --- | --- |
-| `enabled` | `true` | Pasang shield di off-hand dan pakai untuk memblok saat PvP |
-| `blockRange` | `4.5` | Jarak (blok) lawan yang membuat shield otomatis diangkat |
-| `predictMs` | `400` | Lama shield tetap terangkat setelah melihat ayunan lawan |
-| `approachWindow` | `2.5` | Toleransi jarak ekstra untuk lawan yang bergerak mendekat |
-| `refreshMs` | `900` | Interval mengirim ulang state block supaya tidak diam-diam hilang |
-| `face` | `true` | Hadapkan bot ke lawan supaya shield memblok dari depan |
-
-Nilai `combat.hunt` untuk critical hit:
-
-| Opsi | Default | Fungsi |
-| --- | --- | --- |
-| `critEnabled` | `true` | Lompat lalu pukul saat jatuh untuk critical hit |
-| `critTickMs` | `20` | Interval pemeriksaan ketinggian/kecepatan saat melompat |
-| `critRiseTimeoutMs` | `250` | Batas waktu menunggu bot terangkat |
-| `critFallTimeoutMs` | `500` | Batas waktu menunggu bot mulai jatuh |
-| `shieldBreakEnabled` | `true` | Pakai kapak kalau lawan memblok dengan shield |
-| `shieldBreakPunishMs` | `5000` | Lama shield lawan cooldown setelah kena kapak |
-| `shieldBreakWindowMs` | `1500` | Jendela pemeriksaan darah untuk menilai pukulan diblok |
-
-### Mengelak panah saat diserang
-
-`src/safety/dodge.js` membuat bot bergeser sedikit dari garis tembakan panah yang menuju ke arahnya. Setiap `tickMs` (default 80 ms) bot memeriksa semua entitas panah dalam radius `detectRange`: lintasan tiap panah disimulasikan per tick dari posisi + kecepatannya (drag 0.99 dan gravitasi, sama seperti panah sungguhan), lalu dihitung apakah lintasan itu akan melewati badan bot (sumbu vertikal bodi ditambah radius `radius`). Panah yang bakal lewat dalam beberapa tick dicatat sebagai ancaman.
-
-Untuk ancaman itu bot memilih arah geser **tegak lurus garis tembakan** (sisi yang paling jauh dari lintasan) lalu menahan kontrol `left`/`right` (plus `forward`/`back` kalau panahnya datang hampir dari samping) selama `dodgeMs`. Karena geserannya kecil dan ke samping, bot tetap mendekati lawan — bukan lari mundur. Kalau panah yang sama masih mengancam setelah `dodgeMs`, bot bergeser sekali lagi, tetapi ada jeda `cooldownMs` supaya tidak bergetar bolak-balik di tempat.
-
-Bot juga **mengelak sebelum panah lahir**: kalau ada mob/player dengan busur yang sedang menarik panah (`entityDrawingBow`, metadata use-item + item `bow` di tangan) dan menghadap ke bot dalam `drawRange`, bot sudah bergeser duluan. Serangan panah yang sedang mengarah tepat ke badan bot lalu dilepas setelah busur penuh akan melewati posisi lama bot.
-
-Dodge dimatikan sementara saat bot sedang makan (`bot.consuming` / FoodManager `eating`), karena bergeser membatalkan konsumsi — heal lebih penting daripada menghindari satu panah. Pada kematian/koneksi putus dodger ikut dihentikan.
-
-| Opsi | Default | Fungsi |
-| --- | --- | --- |
-| `enabled` | `true` | Aktifkan penghindaran panah |
-| `detectRange` | `16` | Jarak (blok) panah yang mulai diperhitungkan |
-| `drawRange` | `20` | Jarak lawan yang menarik busur untuk elakan preemptif |
-| `dodgeMs` | `220` | Lama menahan kontrol geser dalam satu elakan |
-| `cooldownMs` | `500` | Jeda minimum sebelum elakan berikutnya |
-| `tickMs` | `80` | Interval pemeriksaan lintasan panah |
-| `radius` | `0.55` | Setengah lebar badan bot untuk uji lintasan (blok) |
-| `ticks` | `40` | Berapa tick ke depan lintasan disimulasikan |
-
-### Retreat dan heal saat PvP
-
-Kalau darah bot turun sampai `retreatHealth` (default 10), bot berhenti menyerang lalu **lari menjauh dari target sambil makan**. Tidak ada lagi pencarian "tempat aman" lewat pathfinder — bot cukup memakai kontrol gerak (`forward` + `sprint`), jadi tidak mungkin gagal dengan `Path was stopped before it could be completed`. Arah lari selalu menjauh dari target, tetapi berganti-ganti kiri/kanan setiap `retreatZigzagMs` sebesar `retreatZigzagDeg`, sehingga bot tidak berlari lurus dan serangan lawan lebih sering meleset. Sebelum berbelok, bot memeriksa blok di depan: lava, api, kaktus, atau dinding akan membuatnya memilih arah belok lain (0°, ±45°, ±90°, ±135°, 180°). Saat tidak bisa maju (menabrak), bot melompat.
-
-Makan berjalan **bersamaan** dengan lari: begitu food di bawah 20 (atau apel emas tersedia, yang tetap bisa dimakan saat makanan penuh), bot memilih makanan terbaik dari inventory dan memakannya tanpa menghentikan lari. Satu hal penting: **sprint dimatikan selama mengunyah** — sprint membatalkan makan di Java, dan itulah yang dulu membuat `bot.consume()` selalu timeout (`Promise timed out.`) sehingga bot sekarat tanpa pernah sembuh. Selama makan bot tetap berjalan menjauh dan tetap zigzag, hanya tidak ngebut, lalu sprint menyala lagi begitu makanan habis. Kalau konsumsi tetap gagal (mis. terputus serangan), bot mencoba ulang sekali lagi; kalau jumlah makanan sudah berkurang atau darah sudah naik, makan dianggap berhasil walau paket konfirmasi server telat. Setelah darah mencapai `retreatResumeHealth` (default 16) bot langsung kembali menyerang dengan senjata terbaik. Kalau tidak ada makanan sama sekali, bot tetap lari sampai `retreatFleeTimeoutMs` habis dan memberi warning. Selama lari shield diturunkan karena memblok memperlambat gerak.
-
-### Shield dan prediksi serangan saat PvP
-
-### Critical hit saat PvP
-
-Setiap kali memukul, bot melompat lalu menahan pukulan sampai **badannya sedang turun** (`velocity.y < 0`, tidak menyentuh tanah). Itu syarat critical hit di Minecraft, jadi damage tiap pukulan naik sekitar 50%. Bot tidak mencoba crit saat di air/lava, di tangga, atau saat sprint — di kondisi itu crit tidak sah, jadi bot memukul biasa tanpa membuang waktu. Kalau lompatan gagal (langit-langit rendah, terhalang blok) atau lawan kabur dari jangkauan, bot langsung memukul normal dalam tick yang sama, jadi tidak ada pukulan yang hilang. Jumlah crit dilaporkan di akhir job: `Target X mati (12 pukulan, 9 kritikal, 0 panah, 14.2s)`.
-
-### Orbit mengelilingi lawan (pedang)
-
-Selama mode `weapon normal`, bot **mengelilingi lawan sambil tetap memukul** (circle strafe), bukan berdiri diam berhadap-hadapan. Arah putaran dibalik setiap `orbitFlipMs` supaya sulit ditebak, dan jarak dijaga di sekitar `orbitRadius`: bot maju kalau terlalu jauh dan mundur kalau terlalu dekat. Orbit berhenti otomatis saat bot makan, saat membidik dengan panah, saat darah rendah dan bot mundur, serta begitu job selesai — semua tombol gerak dilepas kembali.
-
-```json
-"combat": {
-  "hunt": {
-    "orbitEnabled": true,
-    "orbitRadius": 2.8,
-    "orbitDirection": 1,
-    "orbitFlipMs": 2000
-  }
-}
-```
-
-`orbitDirection: 1` memutar ke kanan, `-1` ke kiri. `orbitEnabled: false` mengembalikan gaya lama (maju lurus ke target).
-
-### Lava bucket sekali pakai, diambil kembali
-
-Kalau mode `weapon normal` dan bot membawa `lava_bucket`, bot menumpahkan lava di kaki lawan (maksimal `lavaRange` blok, tidak pernah terlalu dekat dengan dirinya sendiri), membiarkannya membakar selama `lavaBurnTicks`, lalu **mengambil kembali sumber lava** sehingga bucket tidak hilang. Penempatan dibatalkan kalau posisi berair, dan keberhasilan dicek dua sisi: blok sumber sudah hilang *dan* `lava_bucket` benar-benar kembali ke inventory. Sisa lava yang gagal diambil dibersihkan lagi saat job berakhir.
-
-```json
-"combat": {
-  "hunt": {
-    "lavaEnabled": true,
-    "lavaCooldownMs": 12000,
-    "lavaBurnTicks": 8,
-    "lavaRange": 3.2,
-    "lavaPickupAttempts": 3
-  }
-}
-```
-
-Bot memasang shield di off-hand begitu job `attack` mulai, lalu mengangkatnya saat lawan berada dalam `blockRange`. Bot juga memprediksi serangan: ayunan tangan lawan (`entitySwingArm`) dan gerakan lawan yang mendekat cepat sudah cukup untuk mengangkat shield sebelum damage masuk. ### Strategi mematahkan shield lawan
-
-Kalau lawan memegang shield dan memblok, bot tidak membuang pukulan ke dinding: ia beralih ke **kapak**. Satu pukulan kapak mematikan shield lawan selama 5 detik (mekanik vanilla), dan begitu shield mati bot langsung kembali ke **pedang** untuk memakai jendela 5 detik itu sepenuhnya. Alurnya:
-
-1. Bot memukul dengan pedang. Kalau darah lawan **tidak turun** padahal pukulan mendarat (atau metadata lawan menunjukkan tangan aktif dengan shield), pukulan itu dianggap tertahan.
-2. Bot memasang kapak terbaik di inventory lalu memukul. Pukulan itu memang masih ditahan shield, tapi shield lawan langsung cooldown 5 detik.
-3. Selama `shieldBreakPunishMs` bot memakai pedang lagi; setelah itu, kalau lawan mengangkat shield lagi, siklus diulang dari langkah 1.
-
-Bot tidak pernah menebak: kalau data darah lawan tidak tersedia atau pukulan terakhir sudah terlalu lama (`shieldBreakWindowMs`), ia tetap memakai pedang. Kalau di inventory tidak ada kapak sama sekali, bot tetap menyerang dengan senjata terbaiknya dan mencatat peringatan sekali saja, bukan berhenti. Jumlah shield yang berhasil dipatahkan masuk ke log akhir job.
-
-Shield **tetap terangkat walaupun bot sedang memukul** — di Java pukulan tangan utama tidak memutus block off-hand, dan inilah yang membuat block sebelumnya sering bocor. Shield hanya diturunkan untuk aksi yang benar-benar butuh tangan kanan: makan dan memanah. Supaya tidak pernah "diam-diam mati", bot mengirim ulang state block setiap `refreshMs` dan mengangkatnya lagi setiap kali menerima `entityHurt`. Bot juga menghadapkan badannya ke lawan saat mengangkat shield, karena block hanya berlaku untuk serangan dari depan. Saat lari karena darah rendah shield diturunkan dulu supaya larinya cepat, lalu otomatis aktif lagi begitu bot kembali menyerang. Kalau inventory tidak punya shield, bot menyerang seperti biasa tanpa error.
-
-Saat mode multi-bot, `attack <nama player>` tanpa `--bot` mengirim semua bot yang online dan idle; `attack <nama player> --bot 2` hanya bot itu. CombatManager otomatis dimatikan selama job attack agar tidak menukar senjata di tengah tarikan panah, lalu dinyalakan lagi setelah job selesai.
-
-### Combo udara: mace smash dan elytra spear charge
-
-Bot punya mesin PvP berbasis FSM (`src/combat/`) yang hanya menyala saat perintah `attack <player>` berjalan — tidak pernah menyerang sendiri. Mesin ini dipasang di bot tunggal maupun di setiap bot swarm, dan bisa dimatikan tanpa menghentikan job lewat `combat off` (status + statistik tampil dengan `combat` saja).
-
-Tujuh slot hotbar disiapkan otomatis (`HotbarLoadout`): 0 mace, 1 spear/senjata terbaik, 2 wind charge, 3 firework, 4 kapak, 5 water bucket, 6 makanan. Slot zirah dada ditukar otomatis antara chestplate dan elytra sesuai state.
-
-**Mace smash.** Kalau target berada 4–10 blok dengan selisih tinggi −1..+2 dan tidak memblok, bot melompat, pada tick berikutnya membidik tegak ke bawah, memakai wind charge, lalu langsung pindah ke slot 0. Smash dieksekusi saat `velocity.y < 0`, `fallDistance >= 1.5`, dan jarak ≤ 3.2 blok; crosshair diarahkan ke **kepala target 1 tick ke depan** (ekstrapolasi linear). Kalau Wind Burst mendorong bot naik lagi, bot menahan crosshair dan mengulang smash di apogee berikutnya tanpa membuang wind charge tambahan (maksimal `maxChains`).
-
-`fallDistance` dihitung sendiri (`FallTracker`) karena Mineflayer tidak mengisinya untuk player. Kalau target keluar jangkauan sementara jarak ke tanah ≤ 1.8 blok dan sudah jatuh > 3 blok, bot memasang water bucket, membidik bawah, menuang, menunggu tepat satu tick fisika, lalu mengambilnya lagi.
-
-**Elytra charge.** Kalau target lebih dari `flyRange` (default 15 blok), bot memasang elytra, melompat, mengirim paket glide, lalu menembakkan firework saat kecepatan horizontal < 0.6 blok/tick. Selama mendekat bot **menahan** tombol use dengan spear (`engage`) agar status charge aktif. Titik bidik bukan pusat target: bot menghitung intersepsi tangensial (target bergerak ikut diperhitungkan) dan mengarahkan lintasan lewat samping pada radius 2.2–3.8 blok, karena spear **tidak memberi damage di bawah 2 blok** dan justru melukai bot sendiri. Setelah hit terdaftar, pitch dinaikkan ke −15° supaya tetap melayang di luar jangkauan balasan.
-
-**Perisai.** Kalau metadata target menunjukkan shielding dalam jarak kontak, combo dibatalkan dan bot beralih ke kapak (stun 5 detik) lalu kembali ke senjata utama — memakai `ShieldBreakStrategy` yang sama dengan serangan melee.
-
-Prioritas state: `clutch > shield > smash > burst > fly > launch > charge`. Semua perhitungan berjalan di listener `physicsTick`; `setTimeout` hanya dipakai sebagai jaring anti-macet kalau server berhenti mengirim tick. Item yang tidak ada di versi server (mis. spear belum ada di vanilla 1.21.4) otomatis dilewati dan diganti item terbaik berikutnya, jadi bot tidak error — hanya kehilangan teknik tersebut.
-
-### Pelacakan koordinat player
-
-Bot mencatat posisi setiap player yang dikirim server lewat paket entity tracking (`spawn_entity`, `sync_entity_position`, `entity_teleport`). Riwayat 64 sampel per player disimpan di `data/tracker/players-<nama bot>.json` (debounce tulis 2 detik, tulis atomik `.tmp` + rename), jadi koordinat tetap ada setelah bot restart.
-
-```
-track                 # daftar player terpantau + jarak/arah
-track where Steve     # detail + prediksi posisi
-track export out.json # ekspor mentah
-track off             # berhenti mencatat
-```
-
-Batas pentingnya: server hanya mengirim posisi player di dalam jangkauan entity-tracking (biasanya 2-5 chunk; di Paper diatur `entity-tracking-range.players`). Begitu player keluar jangkauan, Mineflayer mengirim `entityGone` dan data ditandai **prediksi** — bot mengekstrapolasi lurus dari kecepatan terakhir dan menampilkan radius ketidakpastian yang membesar (maksimal 64 blok). Angka prediksi bukan posisi sebenarnya.
-
-`intel.tracker.alertRadius` (default 32) memunculkan warning di log begitu player terpantau masuk radius; `intel.tracker.alertChat: true` juga mengirimnya ke chat server. `enabled: false` mematikan pencatatan sepenuhnya.
-
-## Storage otomatis
-
-Saat slot kosong tinggal `minFreeSlots` atau kurang, bot mencari chest/barrel/shulker box dan menyimpan item yang bukan gear, armor, makanan, bahan bakar, atau material job.
-
-```json
-"storage": {
-  "enabled": true,
-  "radius": 32,
-  "minFreeSlots": 2,
-  "clearObstructions": true,
-  "containers": ["chest", "trapped_chest", "barrel", "shulker_box"]
-}
-```
-
-Kalau tidak ada storage, bot memberi warning dan menghentikan job. Penghalang di atas container ikut dibersihkan bila `clearObstructions` aktif; atur tinggi pembersihan lewat `gather.clearHeight`.
-
-## Prioritas cave saat mining
-
-Di overworld bot mencari cave/lorong terdekat lebih dulu sebelum menggali lubang baru — cocok untuk base bawah tanah yang sudah punya jalan ke cave. Kalau blok ore terdekat sudah lebih dekat dari `caveMinOreDistance`, bot langsung menambang tanpa berjalan ke cave.
-
-```json
-"gather": {
-  "preferCaves": true,
-  "caveRadius": 48,
-  "caveTravelTimeoutMs": 60000,
-  "caveMinOreDistance": 16
-}
-```
-
-- `preferCaves` menyalakan pencarian cave. Tidak berlaku di Nether.
-- `caveRadius` adalah radius pencarian cave dari posisi bot.
-- `caveMinOreDistance` menentukan kapan bot dianggap "sudah dekat ore" sehingga tidak perlu pindah ke cave.
-- Kandidat cave diurutkan dari yang terdekat; kalau tidak terjangkau bot mencoba kandidat berikutnya (maksimal 3), lalu kembali menambang seperti biasa.
-
-### Tambang cepat dan tidak meninggalkan ore
-
-Bot menghancurkan ore yang sudah dalam jangkauan tangan (≤ 4,3 blok) langsung dengan `dig` plus tool terbaik, tanpa menunggu pathfinding. Blok yang lebih jauh baru didekati sekali dengan `GoalNear`, lalu digali. Urutan target selalu mendahulukan ore di sekitar bot, jadi ore yang sudah terlihat tidak ditinggalkan untuk mencari blok lain.
-
-```json
-"gather": {
-  "digTimeoutMs": 15000,
-  "walkTimeoutMs": 8000,
-  "maxStalled": 5
-}
-```
-
-- `digTimeoutMs` batas waktu satu blok digali (turun dari 45 detik agar bot cepat pindah kalau macet).
-- `walkTimeoutMs` batas waktu berjalan ke blok yang belum terjangkau — kalau gagal, blok itu dilewati, bukan diulang terus.
-- `maxStalled` jumlah kegagalan beruntun pada blok yang sudah terjangkau sebelum job berhenti dengan alasan `unreachable`.
-
-## Menebang kayu: satu bot satu pohon, dari atas ke bawah
-
-Gather `*_log`, `*_wood`, dan `*_stem` tidak memakai penambangan blok acak. Bot mengelompokkan blok kayu menjadi pohon (blok yang bersentuhan dianggap satu pohon), lalu:
-
-- Setiap bot mengklaim **satu pohon** lewat registry klaim yang dipakai bersama semua sesi bot dalam satu proses. Bot lain melewati pohon yang sudah diklaim, jadi swarm berpencar, bukan menyerbu satu pohon.
-- Dalam satu pohon, blok **tertinggi yang sudah terjangkau ditebang lebih dulu**, lalu turun ke bawah. Ini yang diminta untuk pohon besar seperti dark oak: tebang dari atas, bukan menggali bagian bawah dan meninggalkan puncak yang tidak terjangkau.
-- Kalau puncak masih di atas jangkauan (4,3 blok dari mata), bot menumpuk blok (dirt/cobblestone lebih dulu, log hasil tebangan sendiri sebagai pilihan terakhir) untuk mendekat, sampai `maxClimbs` kali. Setelah puncak habis dan sisa batang ada di bawah, bot membongkar tumpukannya sendiri lalu turun, jadi batang bawah ikut ditebang — bukan ditinggal karena terlalu jauh di bawah kaki.
-- Kalau sisa blok ada di samping (cabang), bot mencari posisi berdiri yang benar-benar kosong di sekitar blok lalu berjalan ke sana. Posisi berdiri ini juga dipakai saat menambang, sehingga trunk 2×2 dark oak tidak lagi gagal dengan `unreachable`.
-- Kalau satu pohon sudah habis, bot pindah ke pohon terdekat berikutnya yang belum diklaim. Blok pohon kandidat dicek ulang sebelum ditebang (pohon bisa sudah dihabisi bot lain), dan radius pencarian melebar otomatis (48 → 72 → 108 → 128 blok) kalau pohon di sekitar sudah habis.
-- **Menembus daun**: log dark oak sering tertutup kanopi. Kalau sebuah log gagal dijangkau, bot menelusuri garis pandang dari matanya ke blok itu dan menebang blok daun yang menghalangi (maksimal 8 daun, 2 percobaan per blok), lalu mencoba log yang sama lagi. Kalau bot benar-benar berhenti di dalam kanopi, blok daun di sekitarnya ikut dibuka (`clearLeavesAround`) sebelum bot menyerah.
-- **Hanya pohon asli**: kandidat log tanpa daun di sekitar puncaknya, dengan fondasi bukan tanah, atau dikelilingi material bangunan (papan, pintu, kaca, pagar, cobblestone) dianggap tiang rumah dan dilewati (`tree.naturalOnly: false` untuk mematikannya). Bot tidak lagi membongkar rumah village saat disuruh mengumpulkan kayu. Setelah job selesai bot juga menyapu drop log terakhir supaya tidak ada yang tertinggal di tanah.
-- **Chest tidak dihancurkan**: saat membersihkan penghalang di atas chest, bot menolak menggali chest/barrel/shulker/crafting table/furnace/bed/sign dan blok bernilai lain. Penghalang seperti itu dilewati dan dicatat di log.
-- **Log di tanah diambil dulu**: log yang hancur jatuh sebagai item. Bot mendekati setiap drop log/sapling dalam `collectRadius` sebelum menghitung progres, karena inventory baru bertambah setelah item terangkat. Tanpa ini bot merasa masih kurang dan terus mencari pohon baru sementara tumpukan log tertinggal di tanah.
-- **Blok hantu tidak lagi memblokir bot**: blok yang sudah tidak ada di dunia dibuang dari daftar sisa pohon (`gone`), bukan dihitung sebagai kegagalan. Dulu blok seperti ini membuat bot berdiri diam menunggu blok yang sudah tidak ada.
-- **Menanam ulang**: setelah satu pohon selesai, bot menanam kembali sapling yang didapat dari daun yang ditebang. Dark oak (dan pohon 2×2 lain) butuh 4 sapling dalam kotak 2×2 — kalau sapling kurang dari 4, bot tidak menanam setengah-setengah. Pohon 1×1 cukup 1 sapling.
-- **Tidak diam di satu tempat**: kalau pathfinding ke sebuah blok timeout, bot menghentikan pathfinder yang masih berjalan dan membatalkan penggalian yang menggantung. Tanpa ini bot terlihat "stuck" karena masih berjalan ke tujuan lama sementara aksi berikutnya sudah dimulai. Daun tepat di atas kepala juga dibuka sebelum menumpuk blok, supaya bot bisa naik ke puncak pohon yang tertutup kanopi.
-
-```json
-"gather": {
-  "tree": {
-    "enabled": true,
-    "naturalOnly": true,
-    "scanRadius": 48,
-    "maxScanRadius": 128,
-    "minTreeSize": 4,
-    "maxEmptyTrees": 3,
-    "maxTreesPerJob": 64,
-    "maxClimbs": 6,
-    "maxFailures": 6,
-    "waitMs": 2000,
-    "climb": true,
-    "removeScaffolds": false,
-    "clearLeaves": true,
-    "stuckMs": 20000,
-    "collectDrops": true,
-    "collectRadius": 12,
-    "collectPerDropMs": 3000,
-    "collectTimeoutMs": 20000,
-    "maxDrops": 32,
-    "replant": true,
-    "replantRadius": 2
-  }
-}
-```
-
-- `enabled: false` mengembalikan perilaku lama (menambang blok kayu terdekat satu per satu).
-- `minTreeSize` membuat bot mendahulukan pohon utuh (≥ 4 log); pohon kecil tetap diambil kalau tidak ada yang besar.
-- `maxEmptyTrees` jumlah pohon gagal beruntun sebelum job berhenti dengan alasan `unreachable`; `maxFailures` jumlah blok gagal dalam satu pohon.
-- `waitMs` jeda tunggu kalau semua pohon di sekitar sedang diklaim bot lain.
-- `climb: false` melarang bot menumpuk blok untuk mencapai puncak (bot hanya menebang yang terjangkau).
-- `removeScaffolds: true` membongkar tumpukan blok setelah pohon selesai ditebang (default `false`, sama seperti perilaku `removeScaffolds` global).
-- `clearLeaves: false` melarang bot membuka daun (bot hanya menebang log yang memang sudah terbuka).
-- `stuckMs` batas waktu bot tidak menghasilkan kemajuan apa pun sebelum bot membuka daun di sekitarnya dan mencoba lagi; kalau dua kali tetap tidak ada kemajuan, pohon dilepas dengan alasan `stuck`.
-- `collectDrops: false` mematikan pengambilan drop di tanah; `collectRadius` jarak maksimum drop yang dikejar, `collectPerDropMs` batas waktu per drop, `collectTimeoutMs` batas total per pohon, `maxDrops` jumlah drop maksimum per pohon.
-- `replant: false` mematikan penanaman ulang; `replantRadius` jarak maksimum titik tanam dari bekas batang.
-- Log progres muncul per pohon: `Bot <nama> menebang pohon <id> (n blok, tinggi h, jarak d blok)` dan `Pohon <id>: n log ditebang, progres x/y`. Saat menanam ulang muncul `Menanam n sapling <jenis> di bekas pohon <id>`.
-
-Kalau perintah dijalankan lewat swarm, sisa kuota yang belum terpenuhi dibagi lagi ke bot yang idle sampai `swarm.gatherRounds` putaran (default 2), jadi kekurangan tidak langsung dilaporkan sebagai "selesai sebagian" tanpa usaha kedua.
-
-```json
-"swarm": {
-  "gatherRounds": 2,
-  "maxBots": 50
-}
-```
-
-`swarm.maxBots` membatasi jumlah bot dalam satu proses (1–50, default 50). Prompt launcher menawarkan `1-<maxBots>`, daftar `bots` di config dipotong ke batas ini, dan `bot.count` non-interaktif juga dibatasi ke nilai yang sama. Kalau `staggerDelayMs` tidak diisi, swarm dengan lebih dari 10 bot memakai jeda 400 ms (bukan 1500 ms) supaya 50 bot tidak butuh 75 detik untuk mulai connect.
-
-Catatan: batas 50 adalah batas sisi bot. Server tetap punya batasnya sendiri — vanilla menolak player ke-21, jadi 50 bot butuh server yang menaikkan `max-players` (Paper/Purpur: `settings.max-players` atau `max-players` di `server.properties`) dan kapasitas CPU/RAM yang memadai.
-
-## Membersihkan penghalang chest
-
-```json
-"gather": {
-  "clearChestObstructions": true,
-  "clearHeight": 3
-}
-```
-
-Bot hanya menggali blok yang `diggable`. Cairan atau blok yang tidak bisa digali akan menghasilkan warning dan container dilewati.
-
-## Gamemode dan Mode Creative
-
-Bot mendukung penggantian gamemode baik lewat perintah terminal maupun otomatis saat memulai job build:
+Pilih mode terlebih dahulu, lalu berikan target secara eksplisit:
 
 ```text
-mcbot> gamemode
-mcbot> gamemode creative
-mcbot> gamemode survival
+mcbot> weapon normal
+mcbot> attack NamaPlayer
+
+mcbot> weapon mace
+mcbot> attack NamaPlayer
+
+mcbot> weapon spear
+mcbot> attack NamaPlayer
 ```
 
-Konfigurasi `gamemode`:
+| Mode | Perlengkapan wajib | Perilaku |
+| --- | --- | --- |
+| `normal` | Sword/axe; shield disarankan | Melee, orbit, crit, shield break, bow bila tersedia |
+| `mace` | Mace dan wind charge | Vertical launch dan smash; Wind Burst menghemat wind charge |
+| `spear` | Spear asli, elytra, firework rocket | Takeoff, run-up untuk kecepatan, charge, dan obstacle avoidance |
+
+Tambahan:
+
+- `weapon` tanpa argumen menampilkan mode dan kesiapan perlengkapan.
+- `combat on` / `combat off` mengaktifkan atau mematikan engine combo udara.
+- Mode khusus hanya digunakan untuk `attack <player>`; bot tidak memilih target PvP sendiri.
+- Pada swarm, pergantian mode dibatalkan untuk semua bot jika ada satu bot yang perlengkapannya tidak lengkap.
+- Lava bucket dipakai otomatis di mode normal jika tersedia dan masih memungkinkan diambil kembali.
+
+### Spawn di kasur owner
+
+Biarkan `owner.syncBedSpawn: true`. Saat owner tidur, bot akan mencari kasur tersebut, mendekat, lalu ikut tidur.
+
+Vanilla hanya mengizinkan **satu pemain per kasur**. Jika kasur owner sedang terisi, bot mencari kasur kosong terdekat dalam `owner.bedSearchRadius` (default 6 blok). Bot tetap tunduk pada aturan tidur vanilla seperti waktu malam/thunderstorm dan jarak aman dari monster.
+
+### Pelacakan player
+
+```text
+mcbot> track
+mcbot> track where NamaPlayer
+mcbot> track export hasil.json
+mcbot> track off
+```
+
+Fitur ini hanya memakai paket entity yang diterima bot. Bot tidak dapat mengetahui posisi player offline atau player yang tidak dikirim server.
+
+## Menjalankan swarm
+
+Saat launcher interaktif, masukkan jumlah bot sampai 50. Untuk konfigurasi non-interaktif, gunakan `bot.count` atau daftar username eksplisit:
 
 ```json
-"gamemode": {
-  "enabled": true,
-  "command": "/gamemode {mode}",
-  "buildMode": "creative",
-  "restoreAfterBuild": true,
-  "switchTimeoutMs": 3000
+{
+  "bot": {
+    "username": "BuilderBot",
+    "auth": "offline",
+    "count": 10
+  },
+  "swarm": {
+    "maxBots": 50,
+    "staggerDelayMs": 400,
+    "gatherRounds": 2
+  }
 }
 ```
 
-- `command`: template perintah ganti gamemode (mendukung placeholder `{mode}` dan `{username}`).
-- `buildMode`: jika disetel `"creative"` (default), bot akan mencoba berganti ke mode creative saat menjalankan `build`.
-- `restoreAfterBuild`: jika `true`, bot akan otomatis dikembalikan ke mode sebelumnya (misalnya survival) setelah build selesai.
-- **Bypass Material**: Saat mode creative aktif, bot memunculkan blok yang dibutuhkan secara instan ke inventory menggunakan packet native creative Mineflayer (`bot.creative.setInventorySlot`), sehingga proses penambangan, crafting, smelting, pencarian chest, dan dialog biome otomatis dilewati.
-- **Fallback Otomatis**: Jika server menolak perintah gamemode (misalnya bot tidak memiliki izin OP), bot akan mencatat warning dan otomatis melanjutkan build dalam mode survival biasa.
+Atau tentukan nama satu per satu:
 
-## Batasan
+```json
+{
+  "bots": [
+    { "username": "BuilderBot" },
+    { "username": "BuilderBot_2" },
+    { "username": "BuilderBot_3" }
+  ]
+}
+```
 
-- Orientasi mengikuti file. Gunakan `--rotate` / `--mirror` bila perlu arah lain; arah blok menghadap (tangga, torch dinding, sign) ikut diputar tetapi tidak dijamin sama persis untuk blok ber-properti khusus.
-- Scaffold yang dipasang tidak dibongkar otomatis kecuali `build.removeScaffolds` diubah ke `true` (default `false`).
-- Multi-bot: satu perintah `build` dijalankan oleh satu bot (`--bot <id|nama>`, default bot primary). Build paralel oleh beberapa bot belum didukung.
-- Farmland dan dirt path tidak dibuat otomatis; sediakan lewat chest bila diperlukan.
-- Entity, isi chest, teks sign, dan data tile tidak ikut dibangun.
-- Build bisa gagal di area protected, claim, atau saat anti-cheat server ketat.
-- Scaffold otomatis hanya untuk target yang masih terjangkau setelah naik beberapa blok; struktur menggantung tinggi bisa butuh penanganan manual.
-- Tower follow membutuhkan block yang bisa dipasang. Kalau tidak ada dirt/grass, cobblestone, planks, atau scaffolding di sekitar, bot mencatat warning sekali lalu tetap mengikuti owner dengan rute biasa (tanpa tower) selama 3 menit sebelum mencoba mencari block lagi.
-- Bot tidak memilih block berdasarkan klaim atau aturan server. Gunakan `owner.towerGather.protectRadius` dan pastikan menambang area tersebut diizinkan.
-- Mode renang hanya untuk permukaan air. Owner yang berada di bawah air atau di balik tebing tinggi belum dijamin.
-- Kalau makanan habis, bot akan berhenti dan menunggu owner. Bot tidak mencari chest atau berburu makanan otomatis.
-- Combat tidak mengejar mob di luar jangkauan dan tidak menjamin menang melawan mob kuat seperti warden atau wither.
-- Storage hanya memakai container yang terdeteksi di sekitar bot. Ender chest tidak dipakai otomatis.
-- Material lintas biome bergantung pada jawaban owner. Job akan menunggu selama owner belum menjawab atau menyediakan material pada pilihan `tetap`.
-- Bot tidak menyimpan password di log. Tetap jaga `config.json` dan gunakan akun khusus bot.
+Pastikan server menaikkan batas `max-players` dan mempunyai CPU/RAM yang cukup. Batas 50 bot adalah batas aplikasi, bukan jaminan bahwa server atau komputer kamu sanggup menjalankannya dengan lancar.
 
-## Testing
+## Kelebihan
+
+- Satu program mencakup build, gather, navigasi, PvP, dan multi-bot.
+- Banyak keputusan berjalan per `physicsTick`, sehingga urutan combo tidak hanya bergantung pada timer.
+- Pembagian kerja swarm mengurangi bot yang berebut pohon atau target yang sama.
+- Fitur keselamatan mencakup auto-eat, retreat, dodge, perlindungan lava, dan pengambilan kembali bucket.
+- Gathering kayu melindungi chest serta menghindari log yang terlihat sebagai bagian bangunan.
+- Config lokal dan password tidak ikut masuk Git secara default.
+- Memiliki suite tes otomatis yang dapat dijalankan tanpa server Minecraft.
+
+## Kekurangan dan batasan
+
+- **Bukan jaminan menang atau anti-cheat bypass.** Lag, proteksi wilayah, plugin server, terrain sempit, dan anti-cheat dapat menggagalkan combo atau build.
+- Perubahan terbaru diverifikasi melalui tes unit/fake bot; perilaku fisik seperti ketinggian wind charge dan kecepatan elytra tetap perlu diuji pada server nyata.
+- Dirancang untuk Minecraft Java, terutama 1.21.11. Fitur yang memakai item/enchant baru tidak tersedia pada versi lama.
+- Login otomatis terutama dibuat untuk offline-mode/AuthMe, bukan pengganti login akun Microsoft online-mode.
+- Build paralel satu blueprint oleh banyak bot belum didukung; gunakan `--bot` untuk memilih satu pelaksana.
+- Entity, isi chest, teks sign, dan seluruh data tile blueprint tidak selalu ikut dibangun.
+- Bot tidak dapat tidur di kasur yang sudah terisi; ia akan mencari kasur kosong di dekatnya.
+- Filter pohon dapat melewati pohon tanpa daun atau struktur yang ambigu. Ini disengaja untuk mengurangi kerusakan bangunan.
+- Pelacakan player hanya bekerja dalam jangkauan entity-tracking server; data lama/prediksi bukan koordinat pasti.
+- Jika makanan habis atau akses terhalang proteksi server, bot dapat berhenti dan menunggu bantuan owner.
+- Swarm besar dapat membebani CPU, RAM, koneksi, dan server.
+
+## Menjalankan tes
 
 ```bash
 npm test
 ```
 
-Tes mencakup parser `.litematic`/`.schem`/`.nbt`, rotasi dan mirror blueprint, kebutuhan material, parser koordinat, auth, konfigurasi physics, deteksi follow macet, tower supply, movement tower, water navigator, food manager, urutan build, navigasi tangga dan permukaan, dialog owner, material biome, combat, attack player (pemilihan senjata, bow jarak jauh, pengejaran, lari zigzag + makan saat darah rendah), keamanan lava (LavaGuard, lorong ancient debris), prioritas cave saat mining, tambang langsung blok dalam jangkauan (tanpa antre pathfinding), critical hit (memukul saat jatuh), shield PvP (prediksi ayunan lawan, block tetap saat memukul), strategi kapak untuk mematahkan shield lawan lalu menyerang dengan pedang, container, dan storage. Tes tidak memerlukan server Minecraft.
+Tes tidak memerlukan server Minecraft dan mencakup blueprint, config, navigasi, gather, pohon, inventory, combat, mace, spear, swarm, dan pelacakan player.
+
+## Struktur proyek
+
+```text
+src/
+  blueprint/       Parser blueprint
+  build/           Perencanaan dan eksekusi build
+  combat/          Engine mace, spear, loadout, dan FSM
+  materials/       Gather, crafting, smelting, dan penebangan
+  navigation/      Air, tangga, dan tower
+  safety/          PvP normal, dodge, makan, lava, dan shield
+  swarm/           Sesi dan koordinasi multi-bot
+  cli.js           Perintah terminal
+  config.js        Default dan validasi konfigurasi
+blueprints/        Tempat file blueprint lokal
+scripts/           Utilitas command-line
+test/              Tes otomatis
+docs/              Dokumentasi teknis lanjutan
+```
+
+Gunakan bot hanya pada server yang mengizinkannya dan ikuti aturan server tersebut.
