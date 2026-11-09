@@ -96,7 +96,7 @@ mcbot>
 
 Ketik `help` untuk melihat daftar perintah langsung dari program.
 
-## Cara menggunakan
+## Cara menggunakannya
 
 ### Perintah dasar
 
